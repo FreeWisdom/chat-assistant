@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.env
+*.log
+vector-store/
+.venv/
+node_modules/
+dist/
+tsconfig.json
+package.json
+package-lock.json
+src/
+
+# 临时诊断脚本
+check_*.py
+diagnose.py
+
+# 已弃用的模块
+chat_listener.py
+wechat_client.py

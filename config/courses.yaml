@@ -8,6 +8,7 @@ courses:
     description: "副业项目分享、创业思路、赚钱方法、待办提醒等"
     groups:
       - "项目研究"
+      - "每日饮食打卡🍽️"
     knowledgePath: "./knowledge/fuye-projects"
     systemPrompt: |
       你是一位副业项目研究群的AI助手。群里的成员会分享副业相关的文章、看法和待办提醒。

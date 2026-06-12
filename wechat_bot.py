@@ -6,6 +6,7 @@ import hashlib
 import time
 import logging
 from wxauto4 import WeChat
+from wxauto4.param import WxParam
 from course_manager import CourseManager, Course
 from message_analyzer import analyze_message, is_in_cooldown, record_reply
 from rag_engine import RAGEngine
@@ -55,9 +56,11 @@ class WeChatBot:
     def __init__(self, course_manager: CourseManager, rag_engine: RAGEngine):
         self.cm = course_manager
         self.rag = rag_engine
+        WxParam.SEARCH_CHAT_TIMEOUT = config.CHAT_SEARCH_TIMEOUT
         self.wx = WeChat()
         self.chat_history: dict[str, list[dict]] = {}
         self._processed: set[str] = set()
+        self._current_group: str | None = None
         self._running = False
 
     def start(self):
@@ -89,8 +92,7 @@ class WeChatBot:
         for group_name in self.cm.group_map:
             course = self.cm.get_course(group_name)
             try:
-                self.wx.ChatWith(group_name)
-                time.sleep(1.5)
+                self._switch_group(group_name, force=True)
                 messages = self.wx.GetAllMessage()
                 count = len(messages) if messages else 0
                 if messages:
@@ -118,9 +120,8 @@ class WeChatBot:
                     continue
 
                 try:
-                    # 切换到目标群
-                    self.wx.ChatWith(group_name)
-                    time.sleep(config.POLL_LOAD_WAIT)
+                    # 切换到目标群；单群且未被强制切换时会复用当前会话，避免反复搜索。
+                    self._switch_group(group_name, force=config.FORCE_SWITCH_EACH_POLL)
 
                     # 读取消息
                     messages = self.wx.GetAllMessage()
@@ -151,6 +152,19 @@ class WeChatBot:
                     logger.error(f"[#{poll_id}] [{group_name}] 轮询异常: {e}")
 
             time.sleep(config.POLL_INTERVAL)
+
+    def _switch_group(self, group_name: str, force: bool = False):
+        """切换到指定群；已在目标群时默认不重复搜索。"""
+        if not force and self._current_group == group_name:
+            return
+
+        result = self.wx.ChatWith(group_name, exact=True)
+        if not result:
+            self._current_group = None
+            raise RuntimeError(f"未找到微信群: {group_name}")
+
+        self._current_group = group_name
+        time.sleep(config.POLL_LOAD_WAIT)
 
     def _handle_message(self, msg, group_topic: str, course: Course) -> bool:
         """处理单条消息。返回 True=已处理可标记指纹，False=跳过下次重试"""
@@ -216,7 +230,10 @@ class WeChatBot:
         max_len = config.MAX_REPLY_LENGTH
 
         if len(text) <= max_len:
-            self.wx.SendMsg(text, group_name)
+            if self._current_group == group_name:
+                self.wx.SendMsg(text)
+            else:
+                self.wx.SendMsg(text, group_name, exact=True)
             logger.info(f"  ✅ 已回复 [{group_name}]: {text[:50]}...")
             return
 
@@ -234,7 +251,10 @@ class WeChatBot:
             parts.append(current.strip())
 
         for i, part in enumerate(parts):
-            self.wx.SendMsg(part, group_name)
+            if self._current_group == group_name:
+                self.wx.SendMsg(part)
+            else:
+                self.wx.SendMsg(part, group_name, exact=True)
             logger.info(f"  ✅ 已回复 [{group_name}] ({i+1}/{len(parts)}): {part[:40]}...")
             if i < len(parts) - 1:
                 time.sleep(1)

@@ -8,17 +8,10 @@
 # 2. .txt 文件 — 纯文本文档
 # 3. .json 文件 — 结构化的问答对
 #
-# 推荐目录结构：
+# 当前主链路目录结构：
 #   knowledge/
-#     python-basics/
-#       01-变量与数据类型.md
-#       02-控制流.md
-#       03-函数.md
+#     fuye-projects/
+#       01-副业项目精选.md
 #       faq.json          ← 常见问题与标准答案
-#     data-structures/
-#       01-链表.md
-#       02-栈和队列.md
-#       03-二叉树.md
-#       faq.json
 #
-# 运行 npm run ingest 将知识库文件向量化存入数据库
+# 修改 config/courses.yaml 里的 knowledgePath 即可切换客户知识库。

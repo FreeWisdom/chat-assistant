@@ -1,8 +1,7 @@
 """
 RAG 引擎
-关键词检索 + 联网搜索(Tavily) + DeepSeek 大模型生成回答
+本地关键词检索 + DeepSeek 大模型生成回答
 """
-import os
 import re
 import json
 import time
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def _extract_terms(text: str) -> list[str]:
     """简单中文分词：提取关键词"""
-    cleaned = re.sub(r"[，。？！、；：""''（）【】《》\s\n\r]", " ", text)
+    cleaned = re.sub(r"[，。？！、；：\"'（）【】《》\s\n\r]", " ", text)
     terms: list[str] = []
 
     for m in re.finditer(r"[a-zA-Z_]\w{2,}", cleaned):
@@ -87,24 +86,14 @@ _SUPPORTED_EXTS = {".md", ".txt", ".json"}
 
 
 class RAGEngine:
-    """课程知识库检索 + 联网搜索 + LLM 生成"""
+    """课程知识库检索 + LLM 生成"""
 
     def __init__(self):
         self.docs: dict[str, list[dict]] = {}
         self.client = OpenAI(
-            api_key=os.getenv("LLM_API_KEY", ""),
-            base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com"),
+            api_key=config.LLM_API_KEY,
+            base_url=config.LLM_BASE_URL,
         )
-
-        # Tavily 联网搜索
-        self._tavily = None
-        if config.TAVILY_API_KEY:
-            try:
-                from tavily import TavilyClient
-                self._tavily = TavilyClient(api_key=config.TAVILY_API_KEY)
-                logger.info("✅ Tavily 联网搜索已启用")
-            except Exception as e:
-                logger.warning(f"Tavily 初始化失败: {e}")
 
     def load_knowledge(self, course: Course):
         """加载课程知识库到内存"""
@@ -156,48 +145,21 @@ class RAGEngine:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [doc for _, doc in scored[:top_k]]
 
-    def search_web(self, query: str) -> list[dict]:
-        """联网搜索（Tavily）"""
-        if not self._tavily:
-            return []
-
-        try:
-            logger.info(f"🌐 联网搜索: {query[:50]}")
-            results = self._tavily.search(query, max_results=3, search_depth="basic")
-            docs = []
-            for r in results.get("results", []):
-                docs.append({
-                    "content": f"{r.get('title', '')}\n{r.get('content', '')}",
-                    "source": r.get("url", "网络搜索"),
-                })
-            logger.info(f"  搜索返回 {len(docs)} 条结果")
-            return docs
-        except Exception as e:
-            logger.warning(f"联网搜索失败: {e}")
-            return []
-
     def answer(self, question: str, course: Course,
                chat_history: list[dict] | None = None) -> str:
-        """基于知识库 + 联网搜索回答问题"""
+        """基于本地知识库回答问题"""
         logger.info(f"RAG 查询 [{course.name}]: {question[:80]}")
 
         # 1. 本地知识库检索
         local_results = self.search_local(course.id, question, top_k=3)
 
-        # 2. 联网搜索（有 Tavily key 时启用）
-        web_results = self.search_web(question)
-
-        # 3. 合并上下文
-        all_results = local_results + web_results
-
-        # 4. 构建 prompt
+        # 2. 构建 prompt
         system_content = course.system_prompt
 
-        if all_results:
+        if local_results:
             parts = []
-            for i, doc in enumerate(all_results):
-                source_tag = "本地知识" if "://" not in doc["source"] else "网络搜索"
-                parts.append(f"[参考资料 {i+1}] (来源: {source_tag} - {doc['source']})\n{doc['content'][:500]}")
+            for i, doc in enumerate(local_results):
+                parts.append(f"[参考资料 {i+1}] (来源: 本地知识 - {doc['source']})\n{doc['content'][:500]}")
             context = "\n\n---\n\n".join(parts)
             system_content += f"\n\n以下是与问题相关的参考资料，请优先基于这些资料回答：\n\n{context}"
         else:
@@ -222,8 +184,8 @@ class RAGEngine:
 
         messages.append({"role": "user", "content": question})
 
-        # 5. 调用 LLM
-        model = os.getenv("LLM_MODEL", "deepseek-chat")
+        # 3. 调用 LLM
+        model = config.LLM_MODEL
         for attempt in range(3):
             try:
                 resp = self.client.chat.completions.create(

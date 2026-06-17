@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+*.log
+wxauto_logs/
+vector_store/
+config/backups/
+.venv/
+venv/
+.pytest_cache/
+node_modules/
+admin-ui/dist/
+.DS_Store
+Thumbs.db
+.history/

@@ -17,8 +17,6 @@ import config_store
 
 
 BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-TEMPLATE_DIR = BASE_DIR / "templates"
 REACT_DIST_DIR = BASE_DIR.parent / "admin-ui" / "dist"
 REACT_ASSETS_DIR = REACT_DIST_DIR / "assets"
 
@@ -30,7 +28,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Admin-Token"],
 )
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 if REACT_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(REACT_ASSETS_DIR)), name="react-assets")
 
@@ -44,9 +41,9 @@ def require_sync_token(x_admin_token: str | None = Header(default=None)):
 @app.get("/")
 def index():
     react_index = REACT_DIST_DIR / "index.html"
-    if react_index.exists():
-        return FileResponse(react_index)
-    return FileResponse(TEMPLATE_DIR / "admin.html")
+    if not react_index.exists():
+        raise HTTPException(status_code=404, detail="admin-ui 未构建，请先运行: cd admin-ui && npm run build")
+    return FileResponse(react_index)
 
 
 @app.get("/api/config")
@@ -170,7 +167,7 @@ def restart_script():
 
     killed = _stop_bot_processes()
 
-    log_dir = BASE_DIR / "wxauto_logs"
+    log_dir = BASE_DIR.parent / "runtime" / "logs"
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"restart_{datetime.now():%Y%m%d_%H%M%S}.log"
     log_handle = open(log_file, "w", encoding="utf-8")

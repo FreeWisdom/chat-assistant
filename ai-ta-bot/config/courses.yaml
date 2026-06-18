@@ -32,7 +32,7 @@ knowledgeBases:
 - id: fuye-projects
   name: 副业项目库
   description: 副业项目、创业思路、赚钱方法、案例分析和常见问题
-  path: ./knowledge/fuye-projects
+  path: ../knowledge-data/fuye-projects
   tags:
   - 副业
   - 赚钱
@@ -52,35 +52,12 @@ bindings:
   knowledgeBaseIds:
   - fuye-projects
   replyTriggers:
-  - '?'
-  - ？
-  - 请问
-  - 怎么
-  - 怎么样
-  - 如何
-  - 有没有
-  - 能不能
-  - 靠不靠谱
-  - 赚不赚钱
-  - 靠谱吗
-  - 值得做吗
-  - 怎么做
-  - 求推荐
   - '#举手'
 - group: 每日饮食打卡🍽️
   botId: fuye-assistant
   knowledgeBaseIds:
   - fuye-projects
   replyTriggers:
-  - '?'
-  - ？
-  - 请问
-  - 怎么
-  - 怎么样
-  - 如何
-  - 有没有
-  - 能不能
-  - 靠谱吗
   - '#举手'
 global:
   excludeGroups:
@@ -89,4 +66,4 @@ global:
   admins:
   - 管理员微信名1
   cooldownSeconds: 30
-  smartDetection: true
+  smartDetection: false

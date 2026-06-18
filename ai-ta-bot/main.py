@@ -10,14 +10,12 @@ AI 助教机器人 — 入口文件
   6. py -3.11 main.py
 """
 import logging
-import sys
-
 from dotenv import load_dotenv
 load_dotenv()
 
-from course_manager import CourseManager
-from rag_engine import RAGEngine
-from wechat_bot import WeChatBot
+from application.bootstrap import build_runner
+from configuration import CourseManager
+from knowledge import RAGEngine
 import config
 
 # 配置日志
@@ -28,7 +26,7 @@ logging.basicConfig(
 )
 
 
-def main():
+def main() -> int:
     logger = logging.getLogger("main")
     logger.info("=" * 50)
     logger.info("   AI 助教机器人 启动中...")
@@ -39,16 +37,13 @@ def main():
         cm = CourseManager()
         cm.load("./config/courses.yaml")
 
+        if config.REQUIRE_TEST_GROUP and not config.TEST_GROUP.strip():
+            raise ValueError(
+                "MVP 安全模式要求配置 TEST_GROUP，拒绝默认监听全部微信群"
+            )
         if config.TEST_GROUP:
-            target = config.TEST_GROUP.strip()
-            if target not in cm.group_map:
-                logger.error(f"TEST_GROUP='{target}' 在 courses.yaml 的 bindings 中找不到，请检查群名！")
-                logger.error(f"当前已配置的群: {list(cm.group_map.keys())}")
-                sys.exit(1)
-            cm.group_map = {target: cm.group_map[target]}
-            # 同步精简 bindings 和 knowledge_bases（避免加载未绑定 KB）
-            cm.bindings = [b for b in cm.bindings if b.group == target]
-            logger.info(f"🔧 TEST_GROUP 模式: 只监听 [{target}]")
+            cm.restrict_to_group(config.TEST_GROUP)
+            logger.info("TEST_GROUP 模式: 只监听 [%s]", config.TEST_GROUP)
 
         # 2. 加载知识库
         rag = RAGEngine()
@@ -60,18 +55,20 @@ def main():
             loaded_kb_ids.add(kb.id)
 
         # 3. 启动微信机器人
-        bot = WeChatBot(cm, rag)
-        bot.start()
+        runner = build_runner(cm, rag)
+        runner.start()
+        return 0
 
     except FileNotFoundError as e:
         logger.error(f"配置文件未找到: {e}")
-        sys.exit(1)
+        return 1
     except KeyboardInterrupt:
         logger.info("机器人已停止")
+        return 0
     except Exception as e:
         logger.error(f"启动失败: {e}", exc_info=True)
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

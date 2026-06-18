@@ -5,6 +5,8 @@ __pycache__/
 wxauto_logs/
 vector_store/
 config/backups/
+runtime/
 .venv/
 venv/
 .pytest_cache/
+data/

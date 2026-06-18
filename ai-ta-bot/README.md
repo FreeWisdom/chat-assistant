@@ -4,11 +4,25 @@
 
 ## 主链路
 
-1. `main.py` 加载环境变量、机器人配置和知识库。
-2. `course_manager.py` 读取 `config/courses.yaml`，建立 群 -> 机器人/风格/知识库 的运行时配置。
-3. `rag_engine.py` 只在当前群绑定的知识库中检索资料，并按机器人风格组装 prompt。
-4. `message_analyzer.py` 判断消息是否像问题，并处理冷却时间。
-5. `wechat_bot.py` 使用 `wxauto4` 轮询指定微信群，读取新消息并按正常阅读/输入节奏发送回复。
+1. `main.py` 只负责装配运行依赖。
+2. `configuration/` 读取 `config/courses.yaml`，建立群、机器人和知识库绑定。
+3. `integrations/wechat_gateway.py` 使用 `wxauto4` 独立窗口监听，将严格以 `#举手` 开头的消息写入 SQLite 任务队列。
+4. `application/bot_runner.py` 从任务队列领取消息。
+5. `application/question_service.py` 读取该群、该发送者的历史，调用知识检索和回答生成。
+6. `knowledge/` 加载本地资料、执行检索并调用 DeepSeek/OpenAI 兼容接口。
+7. 回复成功或 `DRY_RUN` 完成后，`persistence/` 才写入用户历史。
+
+核心目录：
+
+```text
+application/     业务用例和 worker
+configuration/   配置模型与加载
+domain/          #举手等领域策略
+integrations/    微信接入
+knowledge/       知识加载、检索、答案生成
+persistence/     SQLite 用户历史
+tests/           无微信副作用的单元测试
+```
 
 ## 运行方式
 
@@ -17,6 +31,16 @@ cd d:\git_hub\chat-assistant\ai-ta-bot
 copy .env.example .env
 python -m pip install -r requirements.txt
 python admin_app.py
+```
+
+`requirements.txt` 已把微信操作层固定为
+`FreeWisdom/wxauto-4.0@bd7c5233e79c0a185638a325bf6d30607244dfa8`。
+项目中不再保留另一套自写微信轮询或切群实现。
+
+MVP 默认不安装本地向量模型。确实需要 Chroma 向量检索时再执行：
+
+```powershell
+python -m pip install -r requirements-vector.txt
 ```
 
 打开本地管理页：
@@ -49,6 +73,7 @@ python main.py
 
 - Windows 桌面版微信已登录，且版本保持当前可用版本。
 - `.env` 里已填写 `LLM_API_KEY`。
+- MVP 安全模式下必须在 `.env` 明确填写 `TEST_GROUP`。
 - `config/courses.yaml` 里的 `bindings.group` 和微信会话名称一致。
 - 知识库文件放在 `knowledgeBases.path` 指向的目录中。
 
@@ -110,18 +135,18 @@ Header: X-Admin-Token: <ADMIN_SYNC_TOKEN>
 
 在 `.env` 中可以调整这些参数：
 
-- `POLL_INTERVAL=12`：每轮检查完所有群后等待多少秒。
-- `POLL_LOAD_WAIT=3`：切换到某个群后等待微信消息区加载多少秒。
 - `CHAT_SEARCH_TIMEOUT=5`：用微信搜索框定位会话时最多等待多少秒。
-- `FORCE_SWITCH_EACH_POLL=false`：是否每一轮都强制重新搜索切换会话。
-- `COOLDOWN_SECONDS=30`：同一个人在同一个群里触发回复后的冷却时间。
-- `MAX_REPLY_LENGTH=500`：超过该长度时分段发送。
-- `REPLY_DELAY_MIN=1.0` / `REPLY_DELAY_MAX=4.0`：回复前的随机等待时间，用来模拟正常阅读和输入节奏。
+- `TASK_WORKER_INTERVAL=0.5`：SQLite 任务 worker 空闲时的检查间隔。
+- `BOT_STATE_DB=./data/bot_state.db`：wxauto4 任务状态和用户历史数据库。
+- `DRY_RUN=true`：完成生成和状态流转，但不向微信发送。
+- `TEST_GROUP=目标群名`：唯一允许监听和回复的测试群。
 - `ADMIN_SYNC_TOKEN`：平台同步接口 token。正式使用建议填写随机值。
 - `ADMIN_CORS_ORIGINS`：允许直接调用本机同步服务的平台前端域名，多个域名用英文逗号分隔。
 
 ## 当前边界
 
-- 知识库检索仍是本地关键词检索，还没有接入向量检索。
-- 还没有长期用户记忆；当前只保留群内最近上下文。
+- MVP 默认关闭向量检索，优先使用轻量关键词/FAQ 检索；需要时可通过环境变量启用 Chroma。
+- 用户历史按“群 + 发送者”保存到 SQLite，目前只保存最近问答，不做用户画像抽取。
+- 消息任务去重和回复状态由 `wxauto4` 的 SQLite 任务队列维护。
+- 当前只针对显式配置的 `TEST_GROUP` 做安全灰度。
 - 本地管理页默认监听 `127.0.0.1:8000`，不要直接暴露到公网。

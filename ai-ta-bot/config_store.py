@@ -11,9 +11,10 @@ import yaml
 
 
 BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
 CONFIG_PATH = BASE_DIR / "config" / "courses.yaml"
-BACKUP_DIR = BASE_DIR / "config" / "backups"
-KNOWLEDGE_ROOT = BASE_DIR / "knowledge"
+BACKUP_DIR = PROJECT_ROOT / "runtime" / "backups"
+KNOWLEDGE_DATA_DIR = PROJECT_ROOT / "knowledge-data"
 SUPPORTED_KNOWLEDGE_EXTS = {".md", ".txt", ".json"}
 SUPPORTED_PROVIDERS = {"local_files", "web"}
 
@@ -74,13 +75,12 @@ def _ensure_unique_ids(items: list[dict[str, Any]], section: str) -> list[str]:
 
 
 def _safe_knowledge_path(raw_path: str, kb_id: str) -> str:
-    path_text = raw_path.strip() if raw_path else f"./knowledge/{_slug(kb_id)}"
+    path_text = raw_path.strip() if raw_path else f"../knowledge-data/{_slug(kb_id)}"
     candidate = (BASE_DIR / path_text).resolve()
-    root = KNOWLEDGE_ROOT.resolve()
     try:
-        candidate.relative_to(root)
+        candidate.relative_to(PROJECT_ROOT.resolve())
     except ValueError as exc:
-        raise ValueError(f"知识库路径必须位于 knowledge 目录下: {path_text}") from exc
+        raise ValueError(f"知识库路径必须位于项目目录下: {path_text}") from exc
     return "./" + candidate.relative_to(BASE_DIR).as_posix()
 
 

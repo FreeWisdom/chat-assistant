@@ -18,4 +18,5 @@ npm run dev
 npm run build
 ```
 
-构建后 `ai-ta-bot/admin_app.py` 会优先服务 `admin-ui/dist/index.html`，打开 `http://127.0.0.1:8000` 即可访问新版 React 页面。
+构建后 `python -m ai_ta_bot.admin_app` 会服务
+`admin-ui/dist/index.html`，打开 `http://127.0.0.1:8000` 即可访问 React 管理页。

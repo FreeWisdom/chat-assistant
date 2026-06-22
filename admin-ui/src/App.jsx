@@ -275,7 +275,7 @@ export default function App() {
       });
       setConfig(ensureConfig(response.config));
       await Promise.all([reloadFiles(), reloadBackups()]);
-      setStatus({ tone: "ok", text: "已写入 config/courses.yaml。重启机器人脚本后生效。" });
+      setStatus({ tone: "ok", text: "已写入 config/bot.yaml。重启机器人进程后生效。" });
     } finally {
       setSaving(false);
     }
@@ -437,7 +437,7 @@ export default function App() {
             type="button"
             className="side-save-button"
             disabled={isHome || saving}
-            title={isHome ? "首页没有可保存的配置，请先进入具体配置页" : "把当前页面配置写入本地 config/courses.yaml，并自动备份旧配置；机器人脚本需重启后生效。"}
+            title={isHome ? "首页没有可保存的配置，请先进入具体配置页" : "把当前页面配置写入本地 config/bot.yaml，并自动备份旧配置；机器人进程需重启后生效。"}
             onClick={() => saveConfig().catch(showError)}
           >
             <Save size={16} />
@@ -509,7 +509,7 @@ export default function App() {
             {active === "global" ? (
               <div className="panel-form">
                 <p className="panel-form-hint">
-                  直接修改下方字段，点击左侧“保存配置”写入本地 <code>config/courses.yaml</code>，重启脚本后生效。
+                  直接修改下方字段，点击左侧“保存配置”写入本地 <code>config/bot.yaml</code>，重启机器人进程后生效。
                 </p>
                 <GlobalForm draft={config.global} patch={patchGlobal} />
               </div>
@@ -704,9 +704,9 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
   ];
   const scriptSteps = [
     { title: "平台录入", desc: "用户在页面填写机器人、风格、知识库和群绑定。", icon: UploadCloud },
-    { title: "保存配置", desc: "点击保存到脚本配置，写入本地 config/courses.yaml。", icon: HardDrive },
+    { title: "保存配置", desc: "点击保存机器人配置，写入本地 config/bot.yaml。", icon: HardDrive },
     { title: "本地备份", desc: "旧配置自动进入 config/backups，便于回滚。", icon: FileClock },
-    { title: "重启脚本", desc: "启动或重启 python main.py，让机器人读取新配置。", icon: PlayCircle },
+    { title: "重启机器人", desc: "启动或重启 python -m ai_ta_bot，让机器人读取新配置。", icon: PlayCircle },
     { title: "群聊回复", desc: "微信群消息命中绑定后，按知识库和风格生成回复。", icon: Zap },
   ];
 
@@ -771,7 +771,7 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
             <div className="status-item">
               <span>配置缓存</span>
               <strong>本地写入</strong>
-              <em>config/courses.yaml</em>
+              <em>config/bot.yaml</em>
             </div>
             <div className="status-item">
               <span>知识文件</span>

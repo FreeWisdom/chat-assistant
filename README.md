@@ -60,6 +60,15 @@ chat-assistant/
 .\scripts\check-environment.ps1
 ```
 
+同步微信自动化依赖到 `FreeWisdom/wxauto-4.0` 的远端 `main` 最新提交，并验证实际导入版本：
+
+```powershell
+.\scripts\sync-wxauto4.ps1
+```
+
+脚本会读取远端最新提交 SHA，同步项目内全部版本声明，重新安装完整的
+`wxauto4` 包，并拒绝本机其他 editable checkout 覆盖项目锁定版本。
+
 ### 2. 安装依赖
 
 ```powershell
@@ -127,7 +136,7 @@ python -m ai_ta_bot
 | 运行时 | `runtime/` 独立目录 | SQLite、日志、索引不与源码混合 |
 | 前端 | 仅 admin-ui（React） | 删除旧 static/ templates/，单一前端 |
 | 包名 | `ai_ta_bot`（下划线） | 合法 Python 包名，支持 `python -m` |
-| 微信 | wxauto-4.0 固定提交 | 避免上游变更破坏 |
+| 微信 | 同步远端 main 后固定精确提交 | 获得完整上游功能，同时保持安装可复现 |
 
 ## 开发
 
@@ -141,5 +150,17 @@ cd admin-ui && npm run dev
 # 打开 http://127.0.0.1:5173
 
 # 运行测试
-cd backend && python -m pytest tests/
+.\scripts\self-test.ps1
+```
+
+只运行后端测试、跳过前端构建：
+
+```powershell
+.\scripts\self-test.ps1 -SkipFrontend
+```
+
+额外检查 wxauto4 锁定提交是否仍等于上游 `main`：
+
+```powershell
+.\scripts\self-test.ps1 -CheckUpstream
 ```

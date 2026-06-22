@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from .. import config_store
+from ... import config_store
 
 router = APIRouter(tags=["config"])
 
 
 def require_sync_token(x_admin_token: str | None = Header(default=None)):
-    from .. import config
+    from ... import config
 
     if config.ADMIN_SYNC_TOKEN and x_admin_token != config.ADMIN_SYNC_TOKEN:
         raise HTTPException(status_code=401, detail="同步 token 无效")

@@ -8,4 +8,4 @@
       01-副业项目精选.md
       faq.json
 
-在 config/courses.yaml 中通过 `path` 字段指定数据目录路径。
+在 `config/bot.yaml` 中通过 `path` 字段指定数据目录路径。

@@ -1,9 +1,0 @@
-openai>=1.30.0
-wxauto4 @ git+https://github.com/FreeWisdom/wxauto-4.0.git@bd7c5233e79c0a185638a325bf6d30607244dfa8
-pyyaml>=6.0
-python-dotenv>=1.0.0
-fastapi>=0.111.0
-uvicorn>=0.30.0
-python-multipart>=0.0.9
-requests>=2.32.0
-beautifulsoup4>=4.12.0

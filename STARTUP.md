@@ -3,9 +3,13 @@
 ## 1. 首次安装依赖
 
 ```powershell
+.\scripts\sync-wxauto4.ps1
 cd backend
 pip install -e .
 ```
+
+以后需要拉取 `FreeWisdom/wxauto-4.0` 的新提交时，重新执行
+`.\scripts\sync-wxauto4.ps1`。脚本会更新精确提交锁并校验运行时导入来源。
 
 可选向量检索：
 
@@ -81,3 +85,11 @@ Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
 $conn = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn) { Stop-Process -Id $conn.OwningProcess -Force }
 ```
+
+## 7. 项目自测
+
+```powershell
+.\scripts\self-test.ps1
+```
+
+该脚本不会启动机器人，也不会读取或发送微信消息。

@@ -20,7 +20,7 @@ from .. import config
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SUPPORTED_LOCAL_EXTS = {".md", ".txt", ".json"}
 
 

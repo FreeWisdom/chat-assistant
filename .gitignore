@@ -1,10 +1,8 @@
 __pycache__/
 *.pyc
+*.egg-info/
 .env
 *.log
-wxauto_logs/
-vector_store/
-config/backups/
 .venv/
 venv/
 .pytest_cache/

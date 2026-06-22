@@ -14,7 +14,7 @@ from .. import config
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _resolve_runtime_path(path: str) -> Path:

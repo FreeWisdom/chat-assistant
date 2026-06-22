@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 
-from .. import config_store
+from ... import config_store
 
 router = APIRouter(tags=["knowledge"])
 
@@ -29,7 +29,7 @@ async def sync_knowledge_file(
     file: UploadFile = File(...),
     x_admin_token: str | None = Header(default=None),
 ):
-    from ..routers.config import require_sync_token
+    from .config import require_sync_token
 
     require_sync_token(x_admin_token)
     try:

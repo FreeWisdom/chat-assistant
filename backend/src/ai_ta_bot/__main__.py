@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from .application.bootstrap import build_runner
 from .configuration import CourseManager
 from .knowledge import RAGEngine
+from .persistence import single_instance_lock
 from . import config
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -36,28 +37,29 @@ def main() -> int:
     logger.info("=" * 50)
 
     try:
-        cm = CourseManager()
-        cm.load(str(PROJECT_ROOT / "config" / "bot.yaml"))
+        with single_instance_lock(config.BOT_LOCK_FILE):
+            cm = CourseManager()
+            cm.load(str(PROJECT_ROOT / "config" / "bot.yaml"))
 
-        if config.REQUIRE_TEST_GROUP and not config.TEST_GROUP.strip():
-            raise ValueError(
-                "MVP 安全模式要求配置 TEST_GROUP，拒绝默认监听全部微信群"
-            )
-        if config.TEST_GROUP:
-            cm.restrict_to_group(config.TEST_GROUP)
-            logger.info("TEST_GROUP 模式: 只监听 [%s]", config.TEST_GROUP)
+            if config.REQUIRE_LISTEN_GROUPS and not config.LISTEN_GROUPS:
+                raise ValueError(
+                    "安全模式要求配置 LISTEN_GROUPS，拒绝默认监听全部微信群"
+                )
+            if config.LISTEN_GROUPS:
+                cm.restrict_to_groups(config.LISTEN_GROUPS)
+                logger.info("微信群白名单: %s", ", ".join(config.LISTEN_GROUPS))
 
-        rag = RAGEngine()
-        loaded_kb_ids = set()
-        for kb in cm.knowledge_bases.values():
-            if kb.id in loaded_kb_ids:
-                continue
-            rag.load_knowledge_base(kb)
-            loaded_kb_ids.add(kb.id)
+            rag = RAGEngine()
+            loaded_kb_ids = set()
+            for kb in cm.knowledge_bases.values():
+                if kb.id in loaded_kb_ids:
+                    continue
+                rag.load_knowledge_base(kb)
+                loaded_kb_ids.add(kb.id)
 
-        runner = build_runner(cm, rag)
-        runner.start()
-        return 0
+            runner = build_runner(cm, rag)
+            runner.start()
+            return 0
 
     except FileNotFoundError as e:
         logger.error(f"配置文件未找到: {e}")

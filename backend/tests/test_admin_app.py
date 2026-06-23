@@ -21,6 +21,7 @@ class AdminAppTests(unittest.TestCase):
             "/api/config",
             "/api/knowledge/files",
             "/api/backups",
+            "/api/runtime/health",
         ):
             with self.subTest(path=path):
                 response = self.client.get(path)

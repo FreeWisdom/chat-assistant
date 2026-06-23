@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from ..configuration import CourseManager
 from ..domain import HandRaiseTriggerPolicy
-from ..persistence import ConversationRepository
+from ..persistence import ConversationRepository, TaskMetadataRepository
 
 
 @dataclass(frozen=True)
@@ -28,26 +28,44 @@ class QuestionService:
         answer_generator,
         conversation_repository: ConversationRepository,
         trigger_policy: HandRaiseTriggerPolicy,
+        task_metadata_repository: TaskMetadataRepository | None = None,
     ):
         self.course_manager = course_manager
         self.answer_generator = answer_generator
         self.conversations = conversation_repository
         self.trigger_policy = trigger_policy
+        self.task_metadata = task_metadata_repository
 
     def prepare(self, task) -> PreparedAnswer:
         runtime = self.course_manager.get_course(task.chat_name)
         if runtime is None:
             raise ValueError(f"微信群没有运行时配置: {task.chat_name}")
 
-        question = self.trigger_policy.extract(task.content)
+        question = self.trigger_policy.extract_persisted(
+            task.content,
+            str(getattr(task, "marker", "") or ""),
+        )
         if not question:
-            raise ValueError("消息不符合严格 #举手 触发规则")
+            raise ValueError("消息不符合机器人触发规则")
 
         sender = str(task.sender or "unknown").strip() or "unknown"
         sender_key = self._sender_key(task, sender)
         history = self.conversations.recent(task.chat_name, sender_key, limit=6)
+        answer_question = question
+        if self.task_metadata is not None:
+            metadata = self.task_metadata.get(task.id)
+            quote_content = str(metadata.get("quote_content") or "").strip()
+            quote_nickname = str(
+                metadata.get("quote_nickname") or "机器人"
+            ).strip()
+            if quote_content:
+                answer_question = (
+                    f"用户正在引用 {quote_nickname} 之前的回复：\n"
+                    f"{quote_content}\n\n"
+                    f"用户当前追问：{question}"
+                )
         answer = self.answer_generator.answer(
-            question,
+            answer_question,
             runtime,
             history,
             sender=sender,

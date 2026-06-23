@@ -35,6 +35,34 @@ class ProjectPathTests(unittest.TestCase):
             any(item["source"].startswith("faq.json#") for item in loaded.chunks)
         )
 
+    def test_two_approved_groups_use_hand_raise_and_separate_knowledge_bases(self):
+        manager = CourseManager()
+        manager.load(ROOT / "config" / "bot.yaml")
+        manager.restrict_to_groups(("项目研究", "每日饮食打卡🍽️"))
+
+        self.assertEqual(
+            set(manager.group_map),
+            {"项目研究", "每日饮食打卡🍽️"},
+        )
+        self.assertEqual(
+            manager.group_map["项目研究"].knowledge_base_ids,
+            ["fuye-projects"],
+        )
+        self.assertEqual(
+            manager.group_map["项目研究"].style.id,
+            "practical-friend",
+        )
+        self.assertEqual(
+            manager.group_map["每日饮食打卡🍽️"].knowledge_base_ids,
+            ["food-checkin"],
+        )
+        self.assertEqual(
+            manager.group_map["每日饮食打卡🍽️"].style.id,
+            "food-friend",
+        )
+        for runtime in manager.group_map.values():
+            self.assertIn("#举手", runtime.reply_triggers)
+
 
 if __name__ == "__main__":
     unittest.main()

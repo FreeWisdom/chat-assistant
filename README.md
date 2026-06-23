@@ -1,6 +1,7 @@
 # AI 社群助教机器人
 
-微信群知识库问答机器人 — 用户发 `#举手` 触发，基于本地知识库 + DeepSeek 生成回答。
+微信群知识库问答机器人。支持 `#举手 问题`、`@机器人 问题`，以及引用
+机器人消息后继续提问，统一基于 DeepSeek、群知识库和按需联网搜索生成回答。
 
 ## 目录结构
 
@@ -88,8 +89,11 @@ pip install -e ".[vector]"
 
 ```ini
 LLM_API_KEY=sk-your-deepseek-key
-DRY_RUN=true          # 首次启动建议 true，只读不发送
-TEST_GROUP=项目研究    # 指定测试群，留空监听全部
+DRY_RUN=true
+LISTEN_GROUPS=项目研究,每日饮食打卡🍽️
+REQUIRE_LISTEN_GROUPS=true
+WEB_SEARCH_ENABLED=true
+TAVILY_API_KEY=tvly-your-key
 ```
 
 **config/bot.yaml** — 群、机器人、知识库绑定：
@@ -100,12 +104,34 @@ botProfiles:
     name: 我的机器人
     ...
 bindings:
-  - group: 微信群名
+  - group: 项目研究
     botId: my-bot
     knowledgeBaseIds: [my-kb]
+    replyTriggers: ["#举手"]
 ```
 
 通过管理页 `http://127.0.0.1:8000` 也可以图形化编辑。
+
+回答前先由 DeepSeek 做问题路由：稳定通用问题直接回答；依赖群资料的问题
+检索当前群绑定的知识库；需要天气、新闻、价格、最新进展等实时外部事实时，
+才调用配置的火山引擎或 Tavily 搜索。知识库路径未命中时，联网搜索作为最后
+兜底。所有路径最终都由 DeepSeek 统一整理成自然的微信群回复。联网回答会
+追加最多两个经过相关性过滤的来源 URL。
+
+联网路由会区分“今天晚上吃什么”这类生活建议和“今天杭州天气”这类实时
+事实，避免只因出现“今天”就搜索。时效问题没有相关结果时会明确说明无法
+核验，不会引用无关网页冒充答案。
+
+不启动微信的真实 API 冒烟测试：
+
+```powershell
+python scripts/smoke-answer-chain.py `
+  --group "每日饮食打卡🍽️" `
+  --question "最近有哪些适合上班族的高蛋白早餐建议？" `
+  --force-web
+```
+
+该命令会实际消耗当前搜索提供方和 DeepSeek API 额度，但不会读取或发送微信消息。
 
 ### 4. 启动管理页
 
@@ -164,3 +190,15 @@ cd admin-ui && npm run dev
 ```powershell
 .\scripts\self-test.ps1 -CheckUpstream
 ```
+
+## 两群真实监听测试
+
+桌面微信已登录后执行：
+
+```powershell
+.\scripts\start-two-group-test.cmd
+```
+
+启动器会硬校验白名单仅为“项目研究”和“每日饮食打卡🍽️”。两个群分别注册监听子窗口，
+不同群并行处理，同一群按顺序处理；按 `Ctrl+C` 可立即停止。运行状态写入
+`runtime/bot_health.json`，管理端可通过 `GET /api/runtime/health` 查询。

@@ -70,8 +70,29 @@ python -m ai_ta_bot
 ```
 
 注意：
-- MVP 默认要求显式配置 `TEST_GROUP`，未配置会拒绝启动。
+- 默认要求显式配置 `LISTEN_GROUPS`，多个群用英文逗号分隔；未配置会拒绝启动。
+- `BOT_MENTION_NAMES` 需要填写本账号在群内可能显示的昵称，才能准确识别
+  `@机器人` 和引用机器人消息；多个昵称用英文逗号分隔。
 - 首次验证保持 `DRY_RUN=true`，确认日志中的拟回复后再关掉。
+- `WEB_SEARCH_ENABLED=true` 时，LLM 路由判定需要实时信息或知识库未命中后，
+  才使用当前配置的火山引擎/Tavily 联网搜索。
+
+当前两群真实测试使用带硬白名单校验的启动器：
+
+```powershell
+.\scripts\start-two-group-test.cmd
+```
+
+它只允许“项目研究”和“每日饮食打卡🍽️”，且只响应 `#举手` 开头的问题。
+每个群注册独立微信子窗口，不同群可并行处理，同一群保持消息顺序。立即停止时在启动窗口按
+`Ctrl+C`。
+
+查看运行状态：
+
+```powershell
+Get-Content .\runtime\bot_health.json -Encoding UTF8
+Invoke-RestMethod http://127.0.0.1:8000/api/runtime/health
+```
 
 ## 6. 端口检查
 

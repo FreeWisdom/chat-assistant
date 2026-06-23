@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 from ai_ta_bot.application import QuestionService
 from ai_ta_bot.domain import HandRaiseTriggerPolicy
-from ai_ta_bot.persistence import ConversationRepository
+from ai_ta_bot.persistence import (
+    ConversationRepository,
+    TaskMetadataRepository,
+)
 
 
 class FakeCourseManager:
@@ -85,6 +88,78 @@ class QuestionServiceTests(unittest.TestCase):
                     {"role": "assistant", "content": "测试回答"},
                 ],
             )
+
+    def test_prepares_mention_and_quote_tasks_from_original_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            conversations = ConversationRepository(Path(directory) / "state.db")
+            generator = FakeAnswerGenerator()
+            service = QuestionService(
+                FakeCourseManager(),
+                generator,
+                conversations,
+                HandRaiseTriggerPolicy(),
+            )
+            tasks = (
+                (
+                    SimpleNamespace(
+                        id=2,
+                        chat_name="测试群",
+                        sender="张三",
+                        content="@ThalesZhen\u2005晚餐怎么搭配",
+                        marker="@机器人",
+                    ),
+                    "晚餐怎么搭配",
+                ),
+                (
+                    SimpleNamespace(
+                        id=3,
+                        chat_name="测试群",
+                        sender="李四",
+                        content="能再具体一点吗",
+                        marker="引用机器人",
+                    ),
+                    "能再具体一点吗",
+                ),
+            )
+
+            for task, expected in tasks:
+                with self.subTest(marker=task.marker):
+                    prepared = service.prepare(task)
+                    self.assertEqual(prepared.question, expected)
+
+    def test_quote_context_is_passed_to_answer_generator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.db"
+            conversations = ConversationRepository(state_path)
+            metadata = TaskMetadataRepository(state_path)
+            metadata.save_context(
+                4,
+                trigger_type="quote",
+                quote_nickname="ThalesZhen",
+                quote_content="白居易生于772年，晚年号香山居士。",
+            )
+            generator = FakeAnswerGenerator()
+            service = QuestionService(
+                FakeCourseManager(),
+                generator,
+                conversations,
+                HandRaiseTriggerPolicy(),
+                metadata,
+            )
+            task = SimpleNamespace(
+                id=4,
+                chat_name="测试群",
+                sender="张三",
+                content="你说的对吗？",
+                marker="引用机器人",
+            )
+
+            prepared = service.prepare(task)
+
+            self.assertEqual(prepared.question, "你说的对吗？")
+            answer_question = generator.calls[0]["question"]
+            self.assertIn("白居易生于772年", answer_question)
+            self.assertIn("用户当前追问：你说的对吗？", answer_question)
 
 
 if __name__ == "__main__":

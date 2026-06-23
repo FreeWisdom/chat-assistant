@@ -132,7 +132,7 @@ function defaultKnowledgeBase() {
     name: "新知识库",
     description: "用于回答微信群内的相关问题",
     provider: "local_files",
-    path: `./knowledge/${id}`,
+    path: `./knowledge-data/${id}`,
     urls: [],
     sitemap: "",
     credential: "",
@@ -196,7 +196,7 @@ function validateModalDraft(type, draft, config, currentIndex) {
     if (!["local_files", "web"].includes(provider)) errors.push(`暂不支持的知识库类型：${provider}`);
     if (provider === "local_files") {
       if (!draft.path?.trim()) errors.push("知识库目录路径必填");
-      else if (!draft.path.replaceAll("\\", "/").startsWith("./knowledge/")) errors.push("知识库目录必须放在 ./knowledge/ 下");
+      else if (!draft.path.replaceAll("\\", "/").startsWith("./knowledge-data/")) errors.push("知识库目录必须放在 ./knowledge-data/ 下");
     }
     if (provider === "web") {
       const urls = draft.urls || [];

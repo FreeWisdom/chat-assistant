@@ -136,18 +136,32 @@ class CourseManager:
         )
 
     def restrict_to_group(self, group_name: str) -> None:
-        target = group_name.strip()
-        if target not in self.group_map:
+        self.restrict_to_groups([group_name])
+
+    def restrict_to_groups(self, group_names: list[str] | tuple[str, ...]) -> None:
+        targets = tuple(dict.fromkeys(
+            str(group_name).strip()
+            for group_name in group_names
+            if str(group_name).strip()
+        ))
+        missing = [target for target in targets if target not in self.group_map]
+        if missing:
             raise ValueError(
-                f"TEST_GROUP='{target}' 在 bindings 中不存在；"
+                f"LISTEN_GROUPS 中的群未在 bindings 中配置: {missing}；"
                 f"当前群: {list(self.group_map)}"
             )
-        runtime = self.group_map[target]
-        self.group_map = {target: runtime}
+        self.group_map = {
+            target: self.group_map[target]
+            for target in targets
+        }
         self.bindings = [
-            binding for binding in self.bindings if binding.group == target
+            binding for binding in self.bindings if binding.group in targets
         ]
-        allowed_kb_ids = set(runtime.knowledge_base_ids)
+        allowed_kb_ids = {
+            kb_id
+            for runtime in self.group_map.values()
+            for kb_id in runtime.knowledge_base_ids
+        }
         self.knowledge_bases = {
             kb_id: kb
             for kb_id, kb in self.knowledge_bases.items()

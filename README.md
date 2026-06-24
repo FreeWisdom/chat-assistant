@@ -1,7 +1,7 @@
 # AI 社群助教机器人
 
-微信群知识库问答机器人。支持 `#举手 问题`、`@机器人 问题`，以及引用
-机器人消息后继续提问，统一基于 DeepSeek、群知识库和按需联网搜索生成回答。
+微信群云知识库问答机器人。支持 `#举手 问题`、`@机器人 问题`，以及引用
+机器人消息后继续提问，统一基于 DeepSeek、阿里云百炼知识库和按需联网搜索生成回答。
 
 ## 目录结构
 
@@ -20,14 +20,13 @@ chat-assistant/
 │   │   ├── config_store.py          # 配置持久化（读写 config/bot.yaml）
 │   │   ├── admin/                   # 管理端 API 模块
 │   │   │   ├── routers/config.py    #   配置 CRUD + 同步
-│   │   │   ├── routers/knowledge.py #   知识库文件上传
 │   │   │   ├── routers/runtime.py   #   进程重启
 │   │   │   └── services/process_manager.py
 │   │   ├── application/             # 应用层：编排启动、问答流程
 │   │   ├── configuration/           # 配置模型与 YAML 加载
 │   │   ├── domain/                  # 领域逻辑：触发策略
 │   │   ├── integrations/            # 微信 wxauto4 适配
-│   │   ├── knowledge/               # 知识库：加载、切块、关键词/向量检索、LLM 生成
+│   │   ├── knowledge/               # 百炼检索、问题路由、联网搜索、LLM 生成
 │   │   └── persistence/             # SQLite 会话与任务状态
 │   ├── tests/                       # 单元测试
 │   ├── pyproject.toml               # 包依赖声明
@@ -36,12 +35,8 @@ chat-assistant/
 ├── config/
 │   └── bot.yaml                     # 业务配置：群绑定、机器人、知识库、风格
 │
-├── knowledge-data/                  # 知识库数据文件（.md / .json）
-│   └── fuye-projects/               #   示例：副业项目库
-│
 ├── runtime/                         # 运行数据（不入 git）
 │   ├── bot_state.db                 #   任务去重 + 用户对话历史
-│   ├── vector_store/                #   Chroma 向量索引
 │   ├── logs/                        #   微信日志 + 重启日志
 │   └── backups/                     #   bot.yaml 自动备份
 │
@@ -77,18 +72,14 @@ cd backend
 pip install -e .
 ```
 
-如需向量检索（可选，依赖较重）：
-
-```powershell
-pip install -e ".[vector]"
-```
-
 ### 3. 配置
 
 **backend/.env** — 密钥和机器环境：
 
 ```ini
 LLM_API_KEY=sk-your-deepseek-key
+ALIBABA_CLOUD_ACCESS_KEY_ID=your-access-key-id
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=your-access-key-secret
 DRY_RUN=true
 LISTEN_GROUPS=项目研究,每日饮食打卡🍽️
 REQUIRE_LISTEN_GROUPS=true
@@ -103,6 +94,12 @@ botProfiles:
   - id: my-bot
     name: 我的机器人
     ...
+knowledgeBases:
+  - id: my-kb
+    name: 我的百炼知识库
+    provider: aliyun_bailian
+    workspaceId: llm-xxxxxxxx
+    indexId: xxxxxxxx
 bindings:
   - group: 项目研究
     botId: my-bot
@@ -113,8 +110,9 @@ bindings:
 通过管理页 `http://127.0.0.1:8000` 也可以图形化编辑。
 
 回答前先由 DeepSeek 做问题路由：稳定通用问题直接回答；依赖群资料的问题
-检索当前群绑定的知识库；需要天气、新闻、价格、最新进展等实时外部事实时，
-才调用配置的火山引擎或 Tavily 搜索。知识库路径未命中时，联网搜索作为最后
+通过阿里云百炼 Retrieve API 检索当前群绑定的云知识库；需要天气、新闻、
+价格、最新进展等实时外部事实时，才调用配置的火山引擎或 Tavily 搜索。
+云知识库未命中时，联网搜索作为最后
 兜底。所有路径最终都由 DeepSeek 统一整理成自然的微信群回复。联网回答会
 追加最多两个经过相关性过滤的来源 URL。
 
@@ -158,7 +156,7 @@ python -m ai_ta_bot
 | 维度 | 选择 | 原因 |
 |------|------|------|
 | 配置 | `config/bot.yaml` + `backend/.env` | 业务配置与密钥分离；YAML 不做敏感信息 |
-| 数据 | `knowledge-data/` 独立目录 | 数据与加载代码分离 |
+| 知识库 | 阿里云百炼 Retrieve API | 文档、切片、向量和索引生命周期由云服务负责 |
 | 运行时 | `runtime/` 独立目录 | SQLite、日志、索引不与源码混合 |
 | 前端 | 仅 admin-ui（React） | 删除旧 static/ templates/，单一前端 |
 | 包名 | `ai_ta_bot`（下划线） | 合法 Python 包名，支持 `python -m` |

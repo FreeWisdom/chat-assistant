@@ -250,8 +250,7 @@ button {
 .panel-tools,
 .row-actions,
 .modal-foot,
-.sub-head,
-.upload-action {
+.sub-head {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -891,8 +890,7 @@ button {
   margin-top: 9px;
 }
 
-.chip-line em,
-.file-stack span {
+.chip-line em {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -1042,7 +1040,6 @@ button {
 
 .field span,
 .sub-head strong,
-.upload-panel strong,
 .picker-panel strong {
   color: #34413e;
   font-size: 13px;
@@ -1088,7 +1085,6 @@ textarea {
 }
 
 .sub-editor,
-.upload-panel,
 .picker-panel {
   padding: 14px;
   border: 1px solid rgba(23, 37, 34, 0.1);
@@ -1108,18 +1104,6 @@ textarea {
   margin-top: 10px;
 }
 
-.upload-panel {
-  display: grid;
-  gap: 12px;
-}
-
-.upload-panel p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.file-stack,
 .kb-picker {
   display: flex;
   flex-wrap: wrap;

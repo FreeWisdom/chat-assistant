@@ -45,7 +45,7 @@ FINANCE_TOPIC_PATTERN = re.compile(
 
 
 class TavilyWebSearcher:
-    """Small Tavily Search API adapter returning retriever-shaped documents."""
+    """Small Tavily Search API adapter returning normalized documents."""
 
     def __init__(self, api_key: str | None = None, session=None):
         self.api_key = (api_key if api_key is not None else config.TAVILY_API_KEY).strip()

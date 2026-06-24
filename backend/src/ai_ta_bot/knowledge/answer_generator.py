@@ -1,10 +1,11 @@
-"""RAG 引擎：Retriever 检索 + DeepSeek/OpenAI 兼容接口生成回答。"""
+"""RAG 引擎：云知识库检索 + DeepSeek/OpenAI 兼容接口生成回答。"""
 from datetime import date
 import re
 import time
 import logging
 from openai import OpenAI
-from ..configuration import KnowledgeBase, RuntimeBotConfig
+from ..configuration import RuntimeBotConfig
+from .cloud_knowledge import AliyunBailianKnowledgeClient
 from .question_router import (
     LLMQuestionRouter,
     ROUTE_CLARIFY,
@@ -12,7 +13,6 @@ from .question_router import (
     ROUTE_KNOWLEDGE,
     ROUTE_WEB,
 )
-from .retriever import HybridRetriever
 from .web_search import TavilyWebSearcher, VolcengineWebSearcher
 from .. import config
 
@@ -26,13 +26,16 @@ class RAGEngine:
         self,
         *,
         client=None,
-        retriever=None,
+        knowledge_client=None,
         web_searcher=None,
         question_router=None,
     ):
         if client is None and not config.LLM_API_KEY:
             raise ValueError("LLM_API_KEY 未配置，无法启动回答生成器")
-        self.retriever = retriever or HybridRetriever()
+        self.knowledge_client = (
+            knowledge_client
+            or AliyunBailianKnowledgeClient()
+        )
         self.client = client or OpenAI(
             api_key=config.LLM_API_KEY,
             base_url=config.LLM_BASE_URL,
@@ -59,22 +62,26 @@ class RAGEngine:
             raise ValueError("WEB_SEARCH_ENABLED=true 时必须配置 TAVILY_API_KEY")
         return TavilyWebSearcher()
 
-    def load_knowledge(self, runtime: RuntimeBotConfig | KnowledgeBase):
-        """兼容旧调用：可传运行时配置，也可传单个知识库。"""
-        if isinstance(runtime, RuntimeBotConfig):
-            for kb in runtime.knowledge_bases:
-                self.load_knowledge_base(kb)
-            return
+    def validate_knowledge_bases(self, runtime_configs) -> None:
+        knowledge_bases = {
+            kb.id: kb
+            for runtime in runtime_configs
+            for kb in runtime.knowledge_bases
+        }
+        self.knowledge_client.validate(list(knowledge_bases.values()))
 
-        self.load_knowledge_base(runtime)
-
-    def load_knowledge_base(self, kb: KnowledgeBase):
-        """加载单个知识库并刷新检索索引。"""
-        self.retriever.load_knowledge_base(kb)
-
-    def search_local(self, knowledge_base_ids: list[str], query: str, top_k: int = 3) -> list[dict]:
-        """只在当前群绑定的知识库内检索。"""
-        return self.retriever.search(knowledge_base_ids, query, top_k=top_k)
+    def search_knowledge(
+        self,
+        knowledge_bases,
+        query: str,
+        top_k: int = 3,
+    ) -> list[dict]:
+        """只检索当前群绑定的云知识库。"""
+        return self.knowledge_client.search(
+            knowledge_bases,
+            query,
+            top_k=top_k,
+        )
 
     def search_web(self, query: str) -> list[dict]:
         """知识库未命中时执行实时联网搜索。"""
@@ -94,17 +101,17 @@ class RAGEngine:
             chat_history,
         )
         route = decision.route
-        local_results = []
+        knowledge_results = []
         web_results = []
 
         if route == ROUTE_KNOWLEDGE:
-            local_results = self.search_local(
-                runtime.knowledge_base_ids,
+            knowledge_results = self.search_knowledge(
+                runtime.knowledge_bases,
                 question,
                 top_k=config.RETRIEVAL_TOP_K,
             )
             # 知识库应答路径没有命中时，联网搜索才作为最后兜底。
-            if not local_results and config.WEB_SEARCH_ENABLED:
+            if not knowledge_results and config.WEB_SEARCH_ENABLED:
                 search_query = decision.search_query or question
                 web_results = self._filter_relevant_web_results(
                     question,
@@ -112,7 +119,7 @@ class RAGEngine:
                     self.search_web(search_query),
                 )
                 route = ROUTE_WEB if web_results else ROUTE_CLARIFY
-            elif not local_results:
+            elif not knowledge_results:
                 route = ROUTE_CLARIFY
         elif route == ROUTE_WEB and config.WEB_SEARCH_ENABLED:
             search_query = decision.search_query or question
@@ -123,9 +130,9 @@ class RAGEngine:
             )
 
         if web_results:
-            reference_results = [*web_results, *local_results]
+            reference_results = [*web_results, *knowledge_results]
         else:
-            reference_results = local_results
+            reference_results = knowledge_results
 
         # 2. 所有路径最终统一交给 DeepSeek 生成和润色。
         is_web_chat = route == ROUTE_WEB

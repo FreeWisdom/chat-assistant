@@ -7,7 +7,6 @@ import {
   Clock3,
   Database,
   FileClock,
-  FileUp,
   HardDrive,
   Home,
   Layers3,
@@ -92,9 +91,8 @@ function splitLines(value) {
 
 function providerLabel(provider) {
   return {
-    local_files: "本地文件",
-    web: "网页",
-  }[provider || "local_files"] || provider;
+    aliyun_bailian: "阿里云百炼",
+  }[provider || "aliyun_bailian"] || provider;
 }
 
 function classNames(...items) {
@@ -129,13 +127,11 @@ function defaultKnowledgeBase() {
   const id = `kb-${Date.now()}`;
   return {
     id,
-    name: "新知识库",
+    name: "新云知识库",
     description: "用于回答微信群内的相关问题",
-    provider: "local_files",
-    path: `./knowledge-data/${id}`,
-    urls: [],
-    sitemap: "",
-    credential: "",
+    provider: "aliyun_bailian",
+    workspaceId: "",
+    indexId: "",
     tags: [],
     priority: 0,
     fallbackPolicy: "clarify",
@@ -192,20 +188,10 @@ function validateModalDraft(type, draft, config, currentIndex) {
     else if (!idPattern.test(draft.id)) errors.push("知识库 ID 只能用英文、数字、下划线和中划线");
     else if (duplicateValue(config.knowledgeBases, "id", draft.id, currentIndex)) errors.push("知识库 ID 不能重复");
     if (!draft.name?.trim()) errors.push("知识库名称必填");
-    const provider = draft.provider || "local_files";
-    if (!["local_files", "web"].includes(provider)) errors.push(`暂不支持的知识库类型：${provider}`);
-    if (provider === "local_files") {
-      if (!draft.path?.trim()) errors.push("知识库目录路径必填");
-      else if (!draft.path.replaceAll("\\", "/").startsWith("./knowledge-data/")) errors.push("知识库目录必须放在 ./knowledge-data/ 下");
-    }
-    if (provider === "web") {
-      const urls = draft.urls || [];
-      const sitemap = draft.sitemap?.trim();
-      if (!urls.length && !sitemap) errors.push("网页知识库至少填写一个 URL 或 sitemap");
-      for (const url of [...urls, sitemap].filter(Boolean)) {
-        if (!url.startsWith("http://") && !url.startsWith("https://")) errors.push(`网页地址必须以 http:// 或 https:// 开头：${url}`);
-      }
-    }
+    const provider = draft.provider || "aliyun_bailian";
+    if (provider !== "aliyun_bailian") errors.push(`暂不支持的知识库类型：${provider}`);
+    if (!draft.workspaceId?.trim()) errors.push("阿里云百炼 Workspace ID 必填");
+    if (!draft.indexId?.trim()) errors.push("阿里云百炼知识库 Index ID 必填");
   }
 
   if (type === "bindings") {
@@ -224,7 +210,6 @@ function validateModalDraft(type, draft, config, currentIndex) {
 
 export default function App() {
   const [config, setConfig] = useState(emptyConfig);
-  const [files, setFiles] = useState({});
   const [backups, setBackups] = useState([]);
   const [active, setActive] = useState("home");
   const [query, setQuery] = useState("");
@@ -239,20 +224,13 @@ export default function App() {
 
   async function loadAll() {
     setStatus({ tone: "muted", text: "正在读取本地配置..." });
-    const [configResponse, fileResponse, backupResponse] = await Promise.all([
+    const [configResponse, backupResponse] = await Promise.all([
       requestJson("/api/config"),
-      requestJson("/api/knowledge/files"),
       requestJson("/api/backups"),
     ]);
     setConfig(ensureConfig(configResponse.config));
-    setFiles(fileResponse.files || {});
     setBackups(backupResponse.backups || []);
     setStatus({ tone: "ok", text: "已连接本地同步服务，配置可编辑。" });
-  }
-
-  async function reloadFiles() {
-    const fileResponse = await requestJson("/api/knowledge/files");
-    setFiles(fileResponse.files || {});
   }
 
   async function reloadBackups() {
@@ -274,7 +252,7 @@ export default function App() {
         body: JSON.stringify(nextConfig),
       });
       setConfig(ensureConfig(response.config));
-      await Promise.all([reloadFiles(), reloadBackups()]);
+      await reloadBackups();
       setStatus({ tone: "ok", text: "已写入 config/bot.yaml。重启机器人进程后生效。" });
     } finally {
       setSaving(false);
@@ -370,15 +348,13 @@ export default function App() {
   }
 
   const stats = useMemo(() => {
-    const fileCount = Object.values(files).reduce((sum, list) => sum + list.length, 0);
     return [
       { label: "机器人", value: config.botProfiles.length },
       { label: "风格", value: config.styles.length },
-      { label: "知识库", value: config.knowledgeBases.length },
+      { label: "云知识库", value: config.knowledgeBases.length },
       { label: "群绑定", value: config.bindings.length },
-      { label: "知识文件", value: fileCount },
     ];
-  }, [config, files]);
+  }, [config]);
 
   const visibleItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -475,7 +451,6 @@ export default function App() {
           <HomePage
             stats={stats}
             config={config}
-            files={files}
             backups={backups}
             onNavigate={setActive}
             onCreate={createFromHome}
@@ -518,7 +493,6 @@ export default function App() {
                 type={active}
                 items={visibleItems}
                 config={config}
-                files={files}
                 onEdit={openModal}
                 onRemove={removeItem}
               />
@@ -531,15 +505,9 @@ export default function App() {
         <DetailModal
           modal={modal}
           config={config}
-          files={files}
           setModal={setModal}
           onClose={() => setModal(null)}
           onSave={saveModalDraft}
-          onUpload={async (kbId, file) => {
-            await uploadKnowledgeFile(kbId, file);
-            await reloadFiles();
-          }}
-          showError={showError}
         />
       )}
     </div>
@@ -549,15 +517,6 @@ export default function App() {
     setStatus({ tone: "error", text: error.message || String(error) });
   }
 
-  async function uploadKnowledgeFile(kbId, file) {
-    if (!kbId || !file) throw new Error("请选择知识库和文件。");
-    const form = new FormData();
-    form.append("kb_id", kbId);
-    form.append("file", file);
-    setStatus({ tone: "muted", text: "正在上传知识库文件..." });
-    await requestJson("/api/knowledge/upload", { method: "POST", body: form });
-    setStatus({ tone: "ok", text: "知识库文件已上传。重启机器人后会重新加载。" });
-  }
 }
 
 function getSectionHint(type) {
@@ -565,7 +524,7 @@ function getSectionHint(type) {
     home: "配置总览和本地同步状态。",
     bots: "定义机器人身份、职责和要绑定的回复风格。",
     styles: "控制聊天口吻、禁用表达、示例问答和回复长度。",
-    knowledge: "维护本地文件或网页资料源、标签和命中策略。",
+    knowledge: "配置阿里云百炼 Workspace、Index、标签和未命中策略。",
     bindings: "把微信群、机器人、知识库和触发词组合起来。",
     global: "冷却时间、智能检测、排除群和管理员名单。",
   }[type];
@@ -600,35 +559,28 @@ function percent(done, total) {
   return Math.round((done / total) * 100);
 }
 
-function buildHomeModel(config, files, backups) {
+function buildHomeModel(config, backups) {
   const safeConfig = ensureConfig(config);
   const styles = new Set(safeConfig.styles.map((item) => item.id));
   const bots = new Set(safeConfig.botProfiles.map((item) => item.id));
   const knowledgeBases = new Set(safeConfig.knowledgeBases.map((item) => item.id));
-  const allFiles = Object.entries(files || {}).flatMap(([kbId, list]) => {
-    const kb = safeConfig.knowledgeBases.find((item) => item.id === kbId);
-    return (list || []).map((file) => ({
-      ...file,
-      kbId,
-      kbName: kb?.name || kbId,
-    }));
-  });
-
   const botWithStyle = safeConfig.botProfiles.filter((bot) => bot.styleId && styles.has(bot.styleId)).length;
   const bindingWithBot = safeConfig.bindings.filter((binding) => binding.botId && bots.has(binding.botId)).length;
   const bindingWithKb = safeConfig.bindings.filter((binding) =>
     (binding.knowledgeBaseIds || []).some((kbId) => knowledgeBases.has(kbId)),
   ).length;
-  const kbWithSources = safeConfig.knowledgeBases.filter((kb) => {
-    if ((kb.provider || "local_files") === "web") return Boolean((kb.urls || []).length || kb.sitemap);
-    return (files?.[kb.id] || []).length > 0;
-  }).length;
+  const kbWithSources = safeConfig.knowledgeBases.filter(
+    (kb) =>
+      (kb.provider || "aliyun_bailian") === "aliyun_bailian"
+      && Boolean(kb.workspaceId)
+      && Boolean(kb.indexId),
+  ).length;
 
   const completeness = [
     { label: "机器人已绑定风格", done: botWithStyle, total: safeConfig.botProfiles.length },
     { label: "群已绑定机器人", done: bindingWithBot, total: safeConfig.bindings.length },
     { label: "群已绑定知识库", done: bindingWithKb, total: safeConfig.bindings.length },
-    { label: "知识库已有资料源", done: kbWithSources, total: safeConfig.knowledgeBases.length },
+    { label: "云知识库配置完整", done: kbWithSources, total: safeConfig.knowledgeBases.length },
   ].map((item) => ({ ...item, value: percent(item.done, item.total) }));
   const totalDone = completeness.reduce((sum, item) => sum + item.done, 0);
   const total = completeness.reduce((sum, item) => sum + item.total, 0);
@@ -656,14 +608,11 @@ function buildHomeModel(config, files, backups) {
     .forEach((binding) => warnings.push({ title: `${binding.group || "未命名群"} 缺少有效知识库`, detail: "至少绑定一个存在的知识库。" }));
 
   safeConfig.knowledgeBases
-    .filter((kb) => {
-      if ((kb.provider || "local_files") === "web") return !(kb.urls || []).length && !kb.sitemap;
-      return !(files?.[kb.id] || []).length;
-    })
+    .filter((kb) => !kb.workspaceId || !kb.indexId)
     .slice(0, 2)
     .forEach((kb) => warnings.push({
-      title: `${kb.name || kb.id} 还没有资料源`,
-      detail: (kb.provider || "local_files") === "web" ? "进入知识库详情填写 URL 或 sitemap。" : "进入知识库详情上传 md、txt 或 json 文件。",
+      title: `${kb.name || kb.id} 云端标识不完整`,
+      detail: "进入知识库详情填写阿里云百炼 Workspace ID 和 Index ID。",
     }));
 
   const recentItems = [
@@ -674,19 +623,11 @@ function buildHomeModel(config, files, backups) {
       modifiedAt: item.modifiedAt,
       icon: FileClock,
     })),
-    ...allFiles.map((item) => ({
-      kind: item.kbName,
-      title: item.name,
-      detail: `${formatSize(item.size)} · ${item.path}`,
-      modifiedAt: item.modifiedAt,
-      icon: Database,
-    })),
   ]
     .sort((a, b) => parseTime(b.modifiedAt) - parseTime(a.modifiedAt))
     .slice(0, 6);
 
   return {
-    allFiles,
     completeness,
     recentItems,
     score,
@@ -694,20 +635,20 @@ function buildHomeModel(config, files, backups) {
   };
 }
 
-function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
-  const model = useMemo(() => buildHomeModel(config, files, backups), [config, files, backups]);
+function HomePage({ stats, config, backups, onNavigate, onCreate }) {
+  const model = useMemo(() => buildHomeModel(config, backups), [config, backups]);
   const quickActions = [
     { title: "新建机器人", desc: "定义身份、职责、回答边界", icon: Bot, action: () => onCreate("bots") },
     { title: "新建风格", desc: "配置像真人一样的口吻", icon: WandSparkles, action: () => onCreate("styles") },
-    { title: "维护知识库", desc: "上传资料并设置命中策略", icon: Database, action: () => onCreate("knowledge") },
+    { title: "接入云知识库", desc: "配置百炼 Workspace 和 Index", icon: Database, action: () => onCreate("knowledge") },
     { title: "绑定微信群", desc: "选择机器人、知识库和触发词", icon: MessageCircle, action: () => onCreate("bindings") },
   ];
   const scriptSteps = [
-    { title: "平台录入", desc: "用户在页面填写机器人、风格、知识库和群绑定。", icon: UploadCloud },
+    { title: "平台录入", desc: "用户在页面填写机器人、风格、云知识库和群绑定。", icon: UploadCloud },
     { title: "保存配置", desc: "点击保存机器人配置，写入本地 config/bot.yaml。", icon: HardDrive },
     { title: "本地备份", desc: "旧配置自动进入 config/backups，便于回滚。", icon: FileClock },
     { title: "重启机器人", desc: "启动或重启 python -m ai_ta_bot，让机器人读取新配置。", icon: PlayCircle },
-    { title: "群聊回复", desc: "微信群消息命中绑定后，按知识库和风格生成回复。", icon: Zap },
+    { title: "群聊回复", desc: "微信群消息命中绑定后，检索云知识库并生成回复。", icon: Zap },
   ];
 
   return (
@@ -774,9 +715,9 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
               <em>config/bot.yaml</em>
             </div>
             <div className="status-item">
-              <span>知识文件</span>
-              <strong>{model.allFiles.length} 个</strong>
-              <em>重启脚本后重新加载</em>
+              <span>知识来源</span>
+              <strong>阿里云百炼</strong>
+              <em>运行时通过 Retrieve API 检索</em>
             </div>
             <div className="status-item">
               <span>生效方式</span>
@@ -817,7 +758,7 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
           <div className="home-panel-head">
             <div>
               <span>最近变更</span>
-              <strong>配置备份与知识文件</strong>
+              <strong>配置文件自动备份</strong>
             </div>
             <Clock3 size={20} />
           </div>
@@ -837,7 +778,7 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
                 );
               })
             ) : (
-              <div className="panel-empty">暂无备份或知识文件变更。</div>
+              <div className="panel-empty">暂无配置备份。</div>
             )}
           </div>
         </article>
@@ -904,7 +845,7 @@ function HomePage({ stats, config, files, backups, onNavigate, onCreate }) {
   );
 }
 
-function ConfigList({ type, items, config, files, onEdit, onRemove }) {
+function ConfigList({ type, items, config, onEdit, onRemove }) {
   if (!items.length) {
     return (
       <div className="empty-state">
@@ -931,8 +872,8 @@ function ConfigList({ type, items, config, files, onEdit, onRemove }) {
           <div className="row-leading">{renderAvatar(type, item)}</div>
           <div className="row-main">
             <strong>{getTitle(type, item)}</strong>
-            <span>{getSubtitle(type, item, config, files)}</span>
-            <div className="chip-line">{getChips(type, item, config, files).map((chip) => <em key={chip}>{chip}</em>)}</div>
+            <span>{getSubtitle(type, item, config)}</span>
+            <div className="chip-line">{getChips(type, item, config).map((chip) => <em key={chip}>{chip}</em>)}</div>
           </div>
           <div className="row-actions" onClick={(event) => event.stopPropagation()}>
             <button type="button" className="icon-danger" onClick={() => onRemove(type, index)} aria-label="删除">
@@ -958,14 +899,14 @@ function getTitle(type, item) {
   return item.name || item.id || "未命名配置";
 }
 
-function getSubtitle(type, item, config, files) {
+function getSubtitle(type, item, config) {
   if (type === "bots") return item.role || "未填写角色定位";
   if (type === "styles") return item.tone || "未填写风格说明";
   if (type === "knowledge") {
-    const provider = item.provider || "local_files";
-    const sourceText = provider === "web"
-      ? `${(item.urls || []).length} 个 URL${item.sitemap ? " · sitemap" : ""}`
-      : `${files[item.id]?.length || 0} 个文件`;
+    const provider = item.provider || "aliyun_bailian";
+    const sourceText = item.workspaceId && item.indexId
+      ? `${item.workspaceId} / ${item.indexId}`
+      : "云端标识未配置完整";
     return `${item.description || "未填写描述"} · ${providerLabel(provider)} · ${sourceText}`;
   }
   if (type === "bindings") {
@@ -975,7 +916,7 @@ function getSubtitle(type, item, config, files) {
   return "";
 }
 
-function getChips(type, item, config, files) {
+function getChips(type, item, config) {
   if (type === "bots") return [item.id, `风格 ${item.styleId || "未绑定"}`].filter(Boolean);
   if (type === "styles") return [`${item.maxChars || 0} 字以内`, `${item.examples?.length || 0} 个示例`];
   if (type === "knowledge") return [item.id, providerLabel(item.provider), item.fallbackPolicy === "general" ? "可通用回答" : "未命中先追问", ...(item.tags || []).slice(0, 4)];
@@ -983,13 +924,12 @@ function getChips(type, item, config, files) {
     return [
       ...(item.knowledgeBaseIds || []).map((kbId) => config.knowledgeBases.find((kb) => kb.id === kbId)?.name || kbId),
       `${item.replyTriggers?.length || 0} 个触发词`,
-      `${Object.values(files).flat().length} 个本地文件`,
     ].slice(0, 5);
   }
   return [];
 }
 
-function DetailModal({ modal, config, files, setModal, onClose, onSave, onUpload, showError }) {
+function DetailModal({ modal, config, setModal, onClose, onSave }) {
   const meta = sectionMeta[modal.type];
   const Icon = meta.icon;
 
@@ -1028,7 +968,7 @@ function DetailModal({ modal, config, files, setModal, onClose, onSave, onUpload
             <StyleForm draft={modal.draft} patch={patch} patchExample={patchExample} setModal={setModal} />
           )}
           {modal.type === "knowledge" && (
-            <KnowledgeForm draft={modal.draft} files={files} patch={patch} onUpload={onUpload} showError={showError} />
+            <KnowledgeForm draft={modal.draft} patch={patch} />
           )}
           {modal.type === "bindings" && <BindingForm draft={modal.draft} config={config} patch={patch} />}
         </div>
@@ -1110,28 +1050,15 @@ function StyleForm({ draft, patch, patchExample, setModal }) {
   );
 }
 
-function KnowledgeForm({ draft, files, patch, onUpload, showError }) {
-  const [uploadFile, setUploadFile] = useState(null);
-  const existingFiles = files[draft.id] || [];
-  const provider = draft.provider || "local_files";
-
-  async function submitUpload() {
-    try {
-      await onUpload(draft.id, uploadFile);
-      setUploadFile(null);
-    } catch (error) {
-      showError(error);
-    }
-  }
-
+function KnowledgeForm({ draft, patch }) {
+  const provider = draft.provider || "aliyun_bailian";
   return (
     <div className="form-grid">
       <Field label="ID"><input value={draft.id || ""} onChange={(e) => patch("id", e.target.value)} /></Field>
       <Field label="名称"><input value={draft.name || ""} onChange={(e) => patch("name", e.target.value)} /></Field>
       <Field label="类型">
         <select value={provider} onChange={(e) => patch("provider", e.target.value)}>
-          <option value="local_files">本地文件</option>
-          <option value="web">网页 URL / sitemap</option>
+          <option value="aliyun_bailian">阿里云百炼</option>
         </select>
       </Field>
       <Field label="优先级"><input type="number" value={draft.priority || 0} onChange={(e) => patch("priority", Number(e.target.value))} /></Field>
@@ -1141,43 +1068,17 @@ function KnowledgeForm({ draft, files, patch, onUpload, showError }) {
           <option value="general">允许通用经验回答</option>
         </select>
       </Field>
-      {provider === "local_files" && (
-        <Field label="目录路径" wide><input value={draft.path || ""} onChange={(e) => patch("path", e.target.value)} /></Field>
-      )}
-      {provider === "web" && (
-        <>
-          <Field label="网页 URL，一行一个" wide>
-            <textarea value={lines(draft.urls)} onChange={(e) => patch("urls", splitLines(e.target.value))} />
-          </Field>
-          <Field label="sitemap 地址" wide>
-            <input value={draft.sitemap || ""} onChange={(e) => patch("sitemap", e.target.value)} placeholder="https://example.com/sitemap.xml" />
-          </Field>
-        </>
-      )}
+      <Field label="Workspace ID" wide>
+        <input value={draft.workspaceId || ""} onChange={(e) => patch("workspaceId", e.target.value)} placeholder="llm-xxxxxxxx" />
+      </Field>
+      <Field label="Index ID" wide>
+        <input value={draft.indexId || ""} onChange={(e) => patch("indexId", e.target.value)} placeholder="阿里云百炼知识库 ID" />
+      </Field>
       <Field label="描述" wide><input value={draft.description || ""} onChange={(e) => patch("description", e.target.value)} /></Field>
       <Field label="标签，一行一个" wide><textarea value={lines(draft.tags)} onChange={(e) => patch("tags", splitLines(e.target.value))} /></Field>
       <Field label="路由示例问题，一行一个" wide>
         <textarea value={lines(draft.routeExamples)} onChange={(e) => patch("routeExamples", splitLines(e.target.value))} />
       </Field>
-      {provider === "local_files" && (
-        <div className="wide upload-panel">
-          <div>
-            <strong>知识库文件</strong>
-            <p>支持 md / txt / json。新建知识库请先保存到脚本配置，再上传文件。</p>
-          </div>
-          <div className="upload-action">
-            <input type="file" accept=".md,.txt,.json" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-            <button type="button" className="primary-button slim" onClick={submitUpload}>
-              <FileUp size={16} /> 上传
-            </button>
-          </div>
-          <div className="file-stack">
-            {existingFiles.length ? existingFiles.map((file) => (
-              <span key={file.path}>{file.name} · {Math.max(1, Math.ceil(file.size / 1024))} KB</span>
-            )) : <span>暂无已识别文件</span>}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

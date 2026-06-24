@@ -27,15 +27,13 @@ class KnowledgeBase:
     id: str
     name: str
     description: str
-    path: str
-    provider: str = "local_files"
+    provider: str = "aliyun_bailian"
+    workspace_id: str = ""
+    index_id: str = ""
     tags: list[str] = field(default_factory=list)
     priority: int = 0
     fallback_policy: str = "clarify"
     route_examples: list[str] = field(default_factory=list)
-    urls: list[str] = field(default_factory=list)
-    sitemap: str = ""
-    credential: str = ""
 
 
 @dataclass

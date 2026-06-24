@@ -46,33 +46,34 @@ REQUIRE_LISTEN_GROUPS = os.getenv(
 ).lower() == "true"
 REQUIRE_TEST_GROUP = REQUIRE_LISTEN_GROUPS                     # 兼容旧调用
 
-# 知识库检索
-KNOWLEDGE_CHUNK_SIZE = int(os.getenv("KNOWLEDGE_CHUNK_SIZE", "500"))
-KNOWLEDGE_CHUNK_OVERLAP = int(os.getenv("KNOWLEDGE_CHUNK_OVERLAP", "100"))
+# 云知识库检索
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "5"))
-
-# 本地向量库；依赖不可用时会自动降级为关键词检索。
-VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "false").lower() == "true"
-VECTOR_DB_DIR = os.getenv("VECTOR_DB_DIR", "runtime/vector_store/chroma")
-INDEX_MANIFEST_PATH = os.getenv("INDEX_MANIFEST_PATH", "runtime/vector_store/index_manifest.json")
-CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "ai_ta_bot_knowledge")
-CHROMA_BATCH_SIZE = int(os.getenv("CHROMA_BATCH_SIZE", "64"))
-VECTOR_MAX_DISTANCE = float(os.getenv("VECTOR_MAX_DISTANCE", "0.65"))
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
-EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
+KNOWLEDGE_RETRIEVAL_MIN_SCORE = float(
+    os.getenv("KNOWLEDGE_RETRIEVAL_MIN_SCORE", "0.2")
+)
+KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS = float(
+    os.getenv("KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS", "20")
+)
+KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS = int(
+    os.getenv("KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS", "2")
+)
+ALIYUN_BAILIAN_ACCESS_KEY_ID = os.getenv(
+    "ALIBABA_CLOUD_ACCESS_KEY_ID",
+    "",
+)
+ALIYUN_BAILIAN_ACCESS_KEY_SECRET = os.getenv(
+    "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+    "",
+)
+ALIYUN_BAILIAN_ENDPOINT = os.getenv(
+    "ALIYUN_BAILIAN_ENDPOINT",
+    "bailian.cn-beijing.aliyuncs.com",
+)
 
 # 运行状态
 BOT_STATE_DB = os.getenv("BOT_STATE_DB", "runtime/bot_state.db")
 BOT_LOCK_FILE = os.getenv("BOT_LOCK_FILE", "runtime/bot.lock")
 BOT_HEALTH_PATH = os.getenv("BOT_HEALTH_PATH", "runtime/bot_health.json")
-
-# 网页知识库
-WEB_FETCH_TIMEOUT = float(os.getenv("WEB_FETCH_TIMEOUT", "12"))
-WEB_MAX_PAGES_PER_KB = int(os.getenv("WEB_MAX_PAGES_PER_KB", "50"))
-WEB_USER_AGENT = os.getenv(
-    "WEB_USER_AGENT",
-    "ai-ta-bot/0.1 (+local knowledge connector)",
-)
 
 # 实时联网搜索：由 LLM 路由器判定为时效/外部事实，或知识库未命中时调用。
 WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH_ENABLED", "false").lower() == "true"

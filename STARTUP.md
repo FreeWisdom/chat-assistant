@@ -11,12 +11,6 @@ pip install -e .
 以后需要拉取 `FreeWisdom/wxauto-4.0` 的新提交时，重新执行
 `.\scripts\sync-wxauto4.ps1`。脚本会更新精确提交锁并校验运行时导入来源。
 
-可选向量检索：
-
-```powershell
-pip install -e ".[vector]"
-```
-
 ## 2. 启动本地管理页
 
 ```powershell
@@ -70,6 +64,9 @@ python -m ai_ta_bot
 ```
 
 注意：
+- `ALIBABA_CLOUD_ACCESS_KEY_ID` 和 `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
+  必须有阿里云百炼 `sfm:Retrieve` 权限，并能访问配置中的 Workspace。
+- `config/bot.yaml` 中每个知识库必须填写百炼 `workspaceId` 和 `indexId`。
 - 默认要求显式配置 `LISTEN_GROUPS`，多个群用英文逗号分隔；未配置会拒绝启动。
 - `BOT_MENTION_NAMES` 需要填写本账号在群内可能显示的昵称，才能准确识别
   `@机器人` 和引用机器人消息；多个昵称用英文逗号分隔。

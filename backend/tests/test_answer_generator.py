@@ -12,13 +12,13 @@ from ai_ta_bot.knowledge.question_router import (
 )
 
 
-class FakeRetriever:
+class FakeKnowledgeClient:
     def __init__(self, results):
         self.results = results
         self.queries = []
 
-    def search(self, knowledge_base_ids, query, top_k):
-        self.queries.append((knowledge_base_ids, query, top_k))
+    def search(self, knowledge_bases, query, top_k):
+        self.queries.append((knowledge_bases, query, top_k))
         return list(self.results)
 
 
@@ -100,7 +100,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         searcher = FakeWebSearcher()
         engine = RAGEngine(
             client=client,
-            retriever=FakeRetriever([]),
+            knowledge_client=FakeKnowledgeClient([]),
             web_searcher=searcher,
             question_router=FakeRouter(
                 ROUTE_WEB,
@@ -125,7 +125,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         searcher = FakeWebSearcher()
         engine = RAGEngine(
             client=client,
-            retriever=FakeRetriever([{
+            knowledge_client=FakeKnowledgeClient([{
                 "content": "本地知识",
                 "source": "local.md",
                 "kb_name": "本地库",
@@ -146,7 +146,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         searcher = FakeWebSearcher()
         engine = RAGEngine(
             client=client,
-            retriever=FakeRetriever([{
+            knowledge_client=FakeKnowledgeClient([{
                 "content": "可能已经过时的本地知识",
                 "source": "local.md",
                 "kb_name": "本地库",
@@ -168,7 +168,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
 
     def test_direct_route_skips_knowledge_and_web_but_still_uses_llm(self):
         client = FakeClient()
-        retriever = FakeRetriever([{
+        knowledge_client = FakeKnowledgeClient([{
             "content": "不应读取",
             "source": "local.md",
             "kb_name": "本地库",
@@ -176,7 +176,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         searcher = FakeWebSearcher()
         engine = RAGEngine(
             client=client,
-            retriever=retriever,
+            knowledge_client=knowledge_client,
             web_searcher=searcher,
             question_router=FakeRouter(ROUTE_DIRECT),
         )
@@ -184,7 +184,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         answer = engine.answer("今天晚上吃什么", make_runtime())
 
         self.assertEqual(answer, "测试回答")
-        self.assertEqual(retriever.queries, [])
+        self.assertEqual(knowledge_client.queries, [])
         self.assertEqual(searcher.queries, [])
         self.assertEqual(len(client.chat.completions.calls), 1)
         system_prompt = client.chat.completions.calls[0]["messages"][0]["content"]
@@ -208,7 +208,7 @@ class RAGEngineWebFallbackTests(unittest.TestCase):
         searcher = IrrelevantSearcher()
         engine = RAGEngine(
             client=client,
-            retriever=FakeRetriever([]),
+            knowledge_client=FakeKnowledgeClient([]),
             web_searcher=searcher,
             question_router=FakeRouter(
                 ROUTE_WEB,

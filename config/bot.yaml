@@ -74,9 +74,11 @@ styles:
     assistant: 关键不是晚上这一个时间点，而是全天总量和长期习惯。晚餐可以吃米饭，先控制到合适分量，再配蛋白质和蔬菜，比硬戒主食更容易坚持。
 knowledgeBases:
 - id: fuye-projects
-  name: 副业项目库
-  description: 副业项目、创业思路、赚钱方法、案例分析和常见问题
-  path: knowledge-data/fuye-projects
+  name: 副业项目云知识库
+  description: 阿里云百炼中的副业项目、创业思路、赚钱方法、案例分析和常见问题
+  provider: aliyun_bailian
+  workspaceId: your-aliyun-workspace-id
+  indexId: your-fuye-index-id
   tags:
   - 副业
   - 赚钱
@@ -91,9 +93,11 @@ knowledgeBases:
   - 有什么适合普通人的赚钱方法
   - 小红书引流怎么变现
 - id: food-checkin
-  name: 饮食打卡知识库
-  description: 日常饮食记录、营养搭配、热量估算和减脂饮食资料
-  path: knowledge-data/food-checkin
+  name: 饮食打卡云知识库
+  description: 阿里云百炼中的日常饮食、营养搭配、热量估算和减脂资料
+  provider: aliyun_bailian
+  workspaceId: your-aliyun-workspace-id
+  indexId: your-food-index-id
   tags:
   - 饮食
   - 营养

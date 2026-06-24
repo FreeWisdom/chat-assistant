@@ -41,7 +41,7 @@ class CourseManager:
         with Path(config_path).open("r", encoding="utf-8") as file:
             data = yaml.safe_load(file) or {}
         if "botProfiles" not in data:
-            data = self._from_legacy_courses(data)
+            raise ValueError("配置格式过旧，请使用 botProfiles/styles/knowledgeBases/bindings")
         self._load_v2(data)
 
     def _load_v2(self, data: dict) -> None:
@@ -82,15 +82,13 @@ class CourseManager:
                 id=item["id"],
                 name=item["name"],
                 description=item.get("description", ""),
-                path=item.get("path", ""),
-                provider=item.get("provider", "local_files"),
+                provider=item.get("provider", "aliyun_bailian"),
+                workspace_id=item.get("workspaceId", ""),
+                index_id=item.get("indexId", ""),
                 tags=item.get("tags", []),
                 priority=int(item.get("priority", 0)),
                 fallback_policy=item.get("fallbackPolicy", "clarify"),
                 route_examples=item.get("routeExamples", []),
-                urls=item.get("urls", []),
-                sitemap=item.get("sitemap", ""),
-                credential=item.get("credential", ""),
             )
             for item in data.get("knowledgeBases", [])
         }
@@ -166,61 +164,6 @@ class CourseManager:
             kb_id: kb
             for kb_id, kb in self.knowledge_bases.items()
             if kb_id in allowed_kb_ids
-        }
-
-    def _from_legacy_courses(self, data: dict) -> dict:
-        bot_profiles = []
-        styles = []
-        knowledge_bases = []
-        bindings = []
-        for course in data.get("courses", []):
-            course_id = course["id"]
-            style_id = f"{course_id}-style"
-            bot_profiles.append(
-                {
-                    "id": course_id,
-                    "name": course.get("name", course_id),
-                    "role": course.get("description", ""),
-                    "styleId": style_id,
-                    "answerPolicyId": "strict-kb",
-                    "identityPrompt": course.get("systemPrompt", ""),
-                }
-            )
-            styles.append(
-                {
-                    "id": style_id,
-                    "name": f"{course.get('name', course_id)}默认风格",
-                    "tone": "像微信群里的熟人，简短直接，不端着",
-                    "maxChars": 200,
-                    "emojiPolicy": "少用",
-                    "avoidWords": ["根据参考资料", "作为AI", "希望这能帮到你"],
-                }
-            )
-            knowledge_bases.append(
-                {
-                    "id": course_id,
-                    "name": course.get("name", course_id),
-                    "description": course.get("description", ""),
-                    "provider": "local_files",
-                    "path": course["knowledgePath"],
-                    "fallbackPolicy": "clarify",
-                }
-            )
-            for group in course.get("groups", []):
-                bindings.append(
-                    {
-                        "group": group,
-                        "botId": course_id,
-                        "knowledgeBaseIds": [course_id],
-                        "replyTriggers": course.get("replyTriggers", []),
-                    }
-                )
-        return {
-            "botProfiles": bot_profiles,
-            "styles": styles,
-            "knowledgeBases": knowledge_bases,
-            "bindings": bindings,
-            "global": data.get("global", {}),
         }
 
     @staticmethod

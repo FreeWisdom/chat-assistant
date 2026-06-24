@@ -53,8 +53,7 @@ def main() -> int:
         question_router=ForceWebRouter() if args.force_web else None,
     )
     if not args.force_web:
-        for knowledge_base in runtime.knowledge_bases:
-            engine.load_knowledge_base(knowledge_base)
+        engine.validate_knowledge_bases([runtime])
 
     answer = engine.answer(
         args.question,

@@ -3,8 +3,8 @@ AI 助教机器人 — 入口文件
 
 启动方式:
   1. 复制 backend/.env.example 为 backend/.env，填入 DeepSeek API Key
-  2. 编辑 config/bot.yaml，配置群、机器人、知识库绑定
-  3. 在 knowledge-data/ 目录下放入知识文档
+  2. 配置阿里云百炼 AccessKey
+  3. 编辑 config/bot.yaml，配置群、机器人和云知识库绑定
   4. cd backend && pip install -e .
   5. 确保 Windows 桌面版微信已登录（微信 4.0.5.x）
   6. python -m ai_ta_bot
@@ -50,12 +50,7 @@ def main() -> int:
                 logger.info("微信群白名单: %s", ", ".join(config.LISTEN_GROUPS))
 
             rag = RAGEngine()
-            loaded_kb_ids = set()
-            for kb in cm.knowledge_bases.values():
-                if kb.id in loaded_kb_ids:
-                    continue
-                rag.load_knowledge_base(kb)
-                loaded_kb_ids.add(kb.id)
+            rag.validate_knowledge_bases(cm.courses)
 
             runner = build_runner(cm, rag)
             runner.start()

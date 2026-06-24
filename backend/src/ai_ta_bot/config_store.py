@@ -13,14 +13,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "bot.yaml"
 BACKUP_DIR = PROJECT_ROOT / "runtime" / "backups"
-KNOWLEDGE_DATA_DIR = PROJECT_ROOT / "knowledge-data"
-SUPPORTED_KNOWLEDGE_EXTS = {".md", ".txt", ".json"}
-SUPPORTED_PROVIDERS = {"local_files", "web"}
-
-
-def _slug(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip()).strip("-")
-    return cleaned.lower() or "knowledge-base"
+SUPPORTED_PROVIDERS = {"aliyun_bailian"}
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -73,24 +66,6 @@ def _ensure_unique_ids(items: list[dict[str, Any]], section: str) -> list[str]:
     return errors
 
 
-def _safe_knowledge_path(raw_path: str, kb_id: str) -> str:
-    path_text = raw_path.strip() if raw_path else f"knowledge-data/{_slug(kb_id)}"
-    candidate = (PROJECT_ROOT / path_text).resolve()
-    try:
-        candidate.relative_to(PROJECT_ROOT.resolve())
-    except ValueError as exc:
-        raise ValueError(f"知识库路径必须位于项目目录下: {path_text}") from exc
-    return "./" + candidate.relative_to(PROJECT_ROOT).as_posix()
-
-
-def _clean_urls(value: Any) -> list[str]:
-    return [
-        str(item).strip()
-        for item in _listify(value)
-        if str(item).strip()
-    ]
-
-
 def normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     normalized = _empty_config()
 
@@ -129,21 +104,17 @@ def normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     normalized["knowledgeBases"] = []
     for item in _listify(data.get("knowledgeBases")):
         kb_id = str(item.get("id", "")).strip()
-        provider = str(item.get("provider", "local_files")).strip() or "local_files"
-        path = ""
-        if provider == "local_files":
-            path = _safe_knowledge_path(str(item.get("path", "")).strip(), kb_id)
-        else:
-            path = str(item.get("path", "")).strip()
+        provider = (
+            str(item.get("provider", "aliyun_bailian")).strip()
+            or "aliyun_bailian"
+        )
         normalized["knowledgeBases"].append({
             "id": kb_id,
             "name": str(item.get("name", "")).strip(),
             "description": str(item.get("description", "")).strip(),
             "provider": provider,
-            "path": path,
-            "urls": _clean_urls(item.get("urls")),
-            "sitemap": str(item.get("sitemap", "")).strip(),
-            "credential": str(item.get("credential", "")).strip(),
+            "workspaceId": str(item.get("workspaceId", "")).strip(),
+            "indexId": str(item.get("indexId", "")).strip(),
             "tags": [str(v).strip() for v in _listify(item.get("tags")) if str(v).strip()],
             "priority": int(item.get("priority") or 0),
             "fallbackPolicy": str(item.get("fallbackPolicy", "")).strip() or "clarify",
@@ -202,23 +173,18 @@ def validate_config(data: dict[str, Any]) -> list[str]:
     for kb in data.get("knowledgeBases", []):
         if not kb.get("name"):
             errors.append(f"知识库 {kb.get('id') or '<unknown>'} 缺少名称")
-        provider = kb.get("provider") or "local_files"
+        provider = kb.get("provider") or "aliyun_bailian"
         if provider not in SUPPORTED_PROVIDERS:
             errors.append(f"知识库 {kb.get('id') or '<unknown>'} 的 provider 不支持: {provider}")
             continue
-        if provider == "local_files":
-            try:
-                _safe_knowledge_path(str(kb.get("path", "")), str(kb.get("id", "")))
-            except ValueError as exc:
-                errors.append(str(exc))
-        if provider == "web":
-            urls = _clean_urls(kb.get("urls"))
-            sitemap = str(kb.get("sitemap", "")).strip()
-            if not urls and not sitemap:
-                errors.append(f"网页知识库 {kb.get('id') or '<unknown>'} 至少需要填写一个 URL 或 sitemap")
-            for url in [*urls, sitemap]:
-                if url and not url.startswith(("http://", "https://")):
-                    errors.append(f"网页知识库 {kb.get('id') or '<unknown>'} 地址必须以 http:// 或 https:// 开头: {url}")
+        if not kb.get("workspaceId"):
+            errors.append(
+                f"阿里云百炼知识库 {kb.get('id') or '<unknown>'} 缺少 workspaceId"
+            )
+        if not kb.get("indexId"):
+            errors.append(
+                f"阿里云百炼知识库 {kb.get('id') or '<unknown>'} 缺少 indexId"
+            )
 
     for index, binding in enumerate(data.get("bindings", [])):
         group = str(binding.get("group", "")).strip()
@@ -252,11 +218,6 @@ def write_config(data: dict[str, Any]) -> dict[str, Any]:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(CONFIG_PATH, BACKUP_DIR / f"courses-{stamp}.yaml")
 
-    for kb in normalized.get("knowledgeBases", []):
-        if kb.get("provider", "local_files") != "local_files":
-            continue
-        (PROJECT_ROOT / kb["path"]).mkdir(parents=True, exist_ok=True)
-
     _dump_yaml(CONFIG_PATH, normalized)
     return normalized
 
@@ -280,25 +241,6 @@ def _backup_file_info(file: Path) -> dict[str, Any]:
     return info
 
 
-def list_knowledge_files(kb_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    config_data = read_config()
-    result: dict[str, list[dict[str, Any]]] = {}
-    for kb in config_data.get("knowledgeBases", []):
-        if kb_id and kb["id"] != kb_id:
-            continue
-        if kb.get("provider", "local_files") != "local_files":
-            result[kb["id"]] = []
-            continue
-        kb_dir = (PROJECT_ROOT / kb["path"]).resolve()
-        files: list[dict[str, Any]] = []
-        if kb_dir.exists():
-            for file in sorted(kb_dir.iterdir()):
-                if file.is_file() and file.suffix.lower() in SUPPORTED_KNOWLEDGE_EXTS:
-                    files.append(_file_info(file))
-        result[kb["id"]] = files
-    return result
-
-
 def list_backups(limit: int = 12) -> list[dict[str, Any]]:
     if not BACKUP_DIR.exists():
         return []
@@ -309,25 +251,3 @@ def list_backups(limit: int = 12) -> list[dict[str, Any]]:
     ]
     backups.sort(key=lambda item: item["modifiedAt"], reverse=True)
     return backups[:limit]
-
-
-def save_knowledge_file(kb_id: str, filename: str, content: bytes) -> dict[str, Any]:
-    config_data = read_config()
-    kb = next((item for item in config_data.get("knowledgeBases", []) if item["id"] == kb_id), None)
-    if not kb:
-        raise ValueError(f"知识库不存在: {kb_id}")
-    if kb.get("provider", "local_files") != "local_files":
-        raise ValueError("只有本地文件知识库支持上传文件")
-
-    safe_name = Path(filename).name
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in SUPPORTED_KNOWLEDGE_EXTS:
-        raise ValueError(f"不支持的文件类型: {suffix or '<none>'}")
-    if not content:
-        raise ValueError("上传文件为空")
-
-    kb_dir = (PROJECT_ROOT / kb["path"]).resolve()
-    kb_dir.mkdir(parents=True, exist_ok=True)
-    target = kb_dir / safe_name
-    target.write_bytes(content)
-    return _file_info(target)

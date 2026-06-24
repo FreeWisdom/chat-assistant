@@ -19,7 +19,6 @@ class AdminAppTests(unittest.TestCase):
     def test_read_endpoints_are_available(self):
         for path in (
             "/api/config",
-            "/api/knowledge/files",
             "/api/backups",
             "/api/runtime/health",
         ):
@@ -40,6 +39,10 @@ class AdminAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.json()["ok"])
         self.assertEqual(response.json()["errors"], [])
+
+    def test_local_knowledge_upload_api_is_removed(self):
+        response = self.client.get("/api/knowledge/files")
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

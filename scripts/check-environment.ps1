@@ -36,19 +36,22 @@ if (Test-Path $configFile) {
     Write-Host "[FAIL] config\bot.yaml 不存在" -ForegroundColor Red
 }
 
-# 5. 知识库数据
-$kbDir = Join-Path $Root "knowledge-data"
-if (Test-Path $kbDir) {
-    $kbCount = (Get-ChildItem -Path $kbDir -Recurse -File | Measure-Object).Count
-    Write-Host "[OK] 知识库数据: $kbDir ($kbCount 个文件)" -ForegroundColor Green
-} else {
-    Write-Host "[WARN] knowledge-data 目录不存在" -ForegroundColor Yellow
+# 5. 阿里云百炼凭证（只检查变量名，不输出密钥）
+if (Test-Path $envFile) {
+    $envText = Get-Content -LiteralPath $envFile -Raw
+    $hasAccessKeyId = $envText -match '(?m)^ALIBABA_CLOUD_ACCESS_KEY_ID=.+$'
+    $hasAccessKeySecret = $envText -match '(?m)^ALIBABA_CLOUD_ACCESS_KEY_SECRET=.+$'
+    if ($hasAccessKeyId -and $hasAccessKeySecret) {
+        Write-Host "[OK] 阿里云百炼 AccessKey 已配置" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] 缺少阿里云百炼 AccessKey 配置" -ForegroundColor Yellow
+    }
 }
 
 # 6. 运行目录
 $runtimeDir = Join-Path $Root "runtime"
 if (-not (Test-Path $runtimeDir)) {
-    New-Item -ItemType Directory -Path $runtimeDir, "$runtimeDir\logs", "$runtimeDir\backups", "$runtimeDir\vector_store" -Force | Out-Null
+    New-Item -ItemType Directory -Path $runtimeDir, "$runtimeDir\logs", "$runtimeDir\backups" -Force | Out-Null
     Write-Host "[OK] 已创建 runtime 目录结构" -ForegroundColor Green
 } else {
     Write-Host "[OK] runtime 目录已就绪" -ForegroundColor Green
@@ -56,8 +59,6 @@ if (-not (Test-Path $runtimeDir)) {
 
 # 7. 依赖检查
 try {
-    pip show ai-ta-bot 2>&1 | Out-Null
-    # Actually check for our package
     $pkgCheck = pip show ai_ta_bot 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[OK] ai_ta_bot 包已安装" -ForegroundColor Green
@@ -66,6 +67,17 @@ try {
     }
 } catch {
     Write-Host "[WARN] 无法检查包安装状态" -ForegroundColor Yellow
+}
+
+try {
+    python -c "import alibabacloud_bailian20231229" 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[OK] 阿里云百炼 SDK 已安装" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] 缺少阿里云百炼 SDK，请重新安装 backend 依赖" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "[WARN] 无法检查阿里云百炼 SDK" -ForegroundColor Yellow
 }
 
 # 8. admin-ui

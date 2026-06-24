@@ -7,6 +7,7 @@ import {
   Clock3,
   Database,
   FileClock,
+  FileUp,
   HardDrive,
   Home,
   Layers3,
@@ -340,11 +341,62 @@ export default function App() {
     const next = structuredClone(config);
     if (modal.type === "bots") next.botProfiles[modal.index] = modal.draft;
     if (modal.type === "styles") next.styles[modal.index] = modal.draft;
-    if (modal.type === "knowledge") next.knowledgeBases[modal.index] = modal.draft;
+    if (modal.type === "knowledge") next.knowledgeBases[modal.index] = { ...next.knowledgeBases[modal.index], ...modal.draft };
     if (modal.type === "bindings") next.bindings[modal.index] = modal.draft;
     setConfig(next);
     setModal(null);
     setStatus({ tone: "muted", text: "详情已通过校验并更新到页面，点击保存到脚本配置后写入本地。" });
+  }
+
+  async function provisionKnowledge(draft, selectedFiles) {
+    if (!selectedFiles.length) throw new Error("请至少选择一个知识库文档。");
+    const form = new FormData();
+    form.append("knowledge_base", JSON.stringify(draft));
+    selectedFiles.forEach((file) => form.append("files", file));
+    setStatus({
+      tone: "muted",
+      text: draft.configured
+        ? "正在上传并处理新增文档..."
+        : "正在上传文档并创建知识库...",
+    });
+    const response = await requestJson("/api/knowledge/provision", {
+      method: "POST",
+      body: form,
+    });
+    setConfig(ensureConfig(response.config));
+    setStatus({ tone: "success", text: response.message });
+    return response;
+  }
+
+  async function listKnowledgeDocuments(kbId) {
+    return requestJson(`/api/knowledge/${kbId}/documents`);
+  }
+
+  async function refreshKnowledgeJob(kbId) {
+    return requestJson(`/api/knowledge/${kbId}/job`);
+  }
+
+  async function replaceKnowledgeDocument(kbId, documentId, file) {
+    const form = new FormData();
+    form.append("file", file);
+    setStatus({ tone: "muted", text: "正在上传并替换文档..." });
+    const response = await requestJson(
+      `/api/knowledge/${kbId}/documents/${documentId}/replace`,
+      { method: "POST", body: form },
+    );
+    setConfig(ensureConfig(response.config));
+    setStatus({ tone: "success", text: response.message });
+    return response;
+  }
+
+  async function deleteKnowledgeDocument(kbId, documentId) {
+    const response = await requestJson(
+      `/api/knowledge/${kbId}/documents/${documentId}`,
+      { method: "DELETE" },
+    );
+    setConfig(ensureConfig(response.config));
+    setStatus({ tone: "success", text: response.message });
+    return response;
   }
 
   const stats = useMemo(() => {
@@ -508,6 +560,11 @@ export default function App() {
           setModal={setModal}
           onClose={() => setModal(null)}
           onSave={saveModalDraft}
+          onProvision={provisionKnowledge}
+          onRefreshJob={refreshKnowledgeJob}
+          onListDocuments={listKnowledgeDocuments}
+          onReplaceDocument={replaceKnowledgeDocument}
+          onDeleteDocument={deleteKnowledgeDocument}
         />
       )}
     </div>
@@ -929,27 +986,94 @@ function getChips(type, item, config) {
   return [];
 }
 
-function DetailModal({ modal, config, setModal, onClose, onSave }) {
+function DetailModal({
+  modal,
+  config,
+  setModal,
+  onClose,
+  onSave,
+  onProvision,
+  onRefreshJob,
+  onListDocuments,
+  onReplaceDocument,
+  onDeleteDocument,
+}) {
   const meta = sectionMeta[modal.type];
   const Icon = meta.icon;
+  const [docs, setDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docError, setDocError] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
+
+  const kbId = modal.type === "knowledge" ? modal.draft.id : null;
+  useEffect(function() {
+    if (!kbId) return;
+    var kb = config.knowledgeBases.find(function(item) { return item.id === kbId; });
+    if (!kb || (!kb.configured && !kb.canRefreshStatus && !kb.documentCount)) {
+      setDocs([]);
+      return;
+    }
+    setDocsLoading(true);
+    setDocError("");
+    onListDocuments(kbId)
+      .then(function(res) { setDocs(res.documents || []); })
+      .catch(function(err) { setDocError(err.message || String(err)); })
+      .finally(function() { setDocsLoading(false); });
+  }, [kbId]);
 
   function patch(field, value) {
-    setModal((current) => ({ ...current, draft: { ...current.draft, [field]: value } }));
+    setModal(function(current) { return { ...current, draft: { ...current.draft, [field]: value } }; });
   }
 
   function patchExample(index, field, value) {
-    setModal((current) => {
-      const examples = [...(current.draft.examples || [])];
+    setModal(function(current) {
+      var examples = (current.draft.examples || []).slice();
       examples[index] = { ...examples[index], [field]: value };
       return { ...current, draft: { ...current.draft, examples } };
     });
+  }
+
+  async function handleRefresh() {
+    if (!kbId) return;
+    setDocsLoading(true);
+    try {
+      var res = await onRefreshJob(kbId);
+      if (res.documentRecords) setDocs(res.documentRecords);
+    } catch (err) {
+      setDocError(err.message || String(err));
+    } finally {
+      setDocsLoading(false);
+    }
+  }
+
+  async function handleReplace(docId, file) {
+    if (!file || !kbId) return;
+    try {
+      await onReplaceDocument(kbId, docId, file);
+      var res = await onListDocuments(kbId);
+      setDocs(res.documents || []);
+    } catch (err) {
+      setDocError(err.message || String(err));
+    }
+  }
+
+  async function handleDelete(doc) {
+    if (!kbId) return;
+    if (!window.confirm("确认删除\"" + doc.name + "\"？删除后机器人将无法再检索这份文档。")) return;
+    try {
+      await onDeleteDocument(kbId, doc.id);
+      var res = await onListDocuments(kbId);
+      setDocs(res.documents || []);
+    } catch (err) {
+      setDocError(err.message || String(err));
+    }
   }
 
   return (
     <div className="modal-backdrop" role="presentation">
       <div className="detail-modal" role="dialog" aria-modal="true">
         <div className="modal-head">
-          <div className={`modal-icon ${meta.accent}`}>
+          <div className={"modal-icon " + meta.accent}>
             <Icon size={21} />
           </div>
           <div>
@@ -970,12 +1094,252 @@ function DetailModal({ modal, config, setModal, onClose, onSave }) {
           {modal.type === "knowledge" && (
             <KnowledgeForm draft={modal.draft} patch={patch} />
           )}
+          {modal.type === "knowledge" && (
+            <DocumentManager
+              documents={docs}
+              docsLoading={docsLoading}
+              docError={docError}
+              onRefresh={handleRefresh}
+              onReplace={handleReplace}
+              onDelete={handleDelete}
+              onUpload={kbId ? function() { setShowUpload(true); } : null}
+            />
+          )}
           {modal.type === "bindings" && <BindingForm draft={modal.draft} config={config} patch={patch} />}
         </div>
 
         <div className="modal-foot">
           <button type="button" className="ghost-button" onClick={onClose}>取消</button>
           <button type="button" className="primary-button" onClick={onSave}>校验并保存详情</button>
+        </div>
+      </div>
+
+      {showUpload && kbId && (
+        <UploadModal
+          draft={modal.draft}
+          onProvision={onProvision}
+          onClose={function() { setShowUpload(false); }}
+          onDone={function() {
+            setShowUpload(false);
+            onListDocuments(kbId)
+              .then(function(res) { setDocs(res.documents || []); })
+              .catch(function() {});
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function knowledgeStatusLabel(draft) {
+  var status = draft.indexStatus;
+  var jobId = draft.indexJobId;
+  if (!jobId || (jobId && jobId.indexOf && jobId.indexOf("your-") === 0)) return "未部署";
+  if (!status) return "未部署";
+  var labels = {
+    PENDING: "索引任务排队中",
+    RUNNING: "索引构建中",
+    COMPLETED: "索引就绪",
+    FAILED: "索引失败",
+  };
+  return labels[status] || status;
+}
+
+function documentStatusLabel(status) {
+  var labels = {
+    PROCESSING: "处理中",
+    ACTIVE: "有效",
+    UPDATING: "更新中",
+    DELETING: "删除中",
+    DELETED: "已删除",
+    FAILED: "失败",
+    SUPERSEDED: "已替换",
+  };
+  return labels[status] || status || "未知";
+}
+
+function DocumentManager({ documents, docsLoading, docError, onRefresh, onReplace, onDelete, onUpload }) {
+  const [actionId, setActionId] = useState("");
+
+  return (
+    <div className="document-manager">
+      <div className="document-manager-head">
+        <div>
+          <strong>文档与版本</strong>
+          <p>替换时会先处理新版本，成功后再移除旧版本。</p>
+        </div>
+        <div className="doc-head-actions">
+          {onUpload && (
+            <button
+              type="button"
+              className="primary-button slim"
+              onClick={function() { onUpload(); }}
+            >
+              <UploadCloud size={15} />
+              上传文档
+            </button>
+          )}
+          <button
+            type="button"
+            className="ghost-button slim"
+            disabled={docsLoading}
+            onClick={function() { onRefresh(); }}
+          >
+            <RefreshCw size={15} />
+            {docsLoading ? "加载中..." : "刷新列表"}
+          </button>
+        </div>
+      </div>
+      {docError && <div className="document-error">{docError}</div>}
+      {!docsLoading && !documents.length && (
+        <div className="document-empty">尚未上传文档。</div>
+      )}
+      <div className="document-list">
+        {documents.map(function(document) {
+          var busy = ["PROCESSING", "UPDATING", "DELETING"].indexOf(document.status) !== -1;
+          var acting = actionId === document.id;
+          return (
+            <article className="document-card" key={document.id}>
+              <div className="document-card-main">
+                <div>
+                  <strong>{document.name}</strong>
+                  <span>
+                    当前版本 v{document.currentVersion || "--"} ·
+                    更新于 {formatTime(document.updatedAt)}
+                  </span>
+                </div>
+                <em className={"document-status status-" + String(document.status || "").toLowerCase()}>
+                  {documentStatusLabel(document.status)}
+              </em>
+              </div>
+              <div className="document-actions">
+                <label className={classNames(
+                  "ghost-button",
+                  "slim",
+                  (busy || document.status === "DELETED" || acting) && "disabled",
+                )}>
+                  <FileUp size={15} />
+                  {acting ? "处理中..." : "替换"}
+                  <input
+                    type="file"
+                    hidden
+                    disabled={busy || document.status === "DELETED" || acting}
+                    accept=".doc,.docx,.wps,.ppt,.pptx,.xls,.xlsx,.md,.txt,.pdf,.epub,.mobi"
+                    onChange={function(event) {
+                      var file = event.target.files && event.target.files[0];
+                      event.target.value = "";
+                      if (!file) return;
+                      setActionId(document.id);
+                      onReplace(document.id, file).finally(function() { setActionId(""); });
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="document-delete-button"
+                  disabled={busy || document.status === "DELETED" || acting}
+                  onClick={function() {
+                    setActionId(document.id);
+                    onDelete(document).finally(function() { setActionId(""); });
+                  }}
+                >
+                  <Trash2 size={15} />
+                  删除
+                </button>
+              </div>
+              <details className="version-history">
+                <summary>查看 {(document.versions || []).length} 个版本</summary>
+                <div>
+                  {(document.versions || []).map(function(version) {
+                    return (
+                      <div className="version-row" key={document.id + "-" + version.version}>
+                        <span>v{version.version} · {version.fileName}</span>
+                        <span>{formatSize(version.sizeBytes)}</span>
+                        <em>{documentStatusLabel(version.status)}</em>
+                        <span>{formatTime(version.createdAt)}</span>
+                        {version.error && <b>{version.error}</b>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function UploadModal({ draft, onProvision, onClose, onDone }) {
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [inputKey, setInputKey] = useState(0);
+
+  async function handleUpload() {
+    if (!selectedFiles.length) return;
+    setUploading(true);
+    try {
+      await onProvision(draft, selectedFiles);
+      setSelectedFiles([]);
+      setInputKey(function(v) { return v + 1; });
+      if (onDone) onDone();
+    } catch (err) {
+      // stay open on failure so user can fix and retry
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="detail-modal upload-panel" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div className="modal-icon amber">
+            <UploadCloud size={21} />
+          </div>
+          <div>
+            <h2>{draft.configured ? "向知识库追加文档" : "上传文档并创建知识库"}</h2>
+            <p>支持 PDF、Word、PPT、Excel、WPS、Markdown 和 TXT；文件由平台安全处理，不在本项目长期保存。</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
+            <X size={19} />
+          </button>
+        </div>
+
+        <div className="upload-body">
+          <div className="upload-status-bar">
+            <span className={"cloud-job-status status-" + String(draft.indexStatus || "draft").toLowerCase()}>
+              {knowledgeStatusLabel(draft)}
+            </span>
+          </div>
+          <input
+            key={inputKey}
+            type="file"
+            multiple
+            accept=".doc,.docx,.wps,.ppt,.pptx,.xls,.xlsx,.md,.txt,.pdf,.epub,.mobi"
+            onChange={function(event) { setSelectedFiles(Array.from(event.target.files || [])); }}
+          />
+          <div className="selected-file-list">
+            {selectedFiles.length
+              ? selectedFiles.map(function(file) {
+                return <span key={file.name + "-" + file.size}>{file.name}</span>;
+              })
+              : <span>尚未选择文件</span>}
+          </div>
+        </div>
+
+        <div className="modal-foot">
+          <button type="button" className="ghost-button" onClick={onClose}>取消</button>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={uploading || !selectedFiles.length}
+            onClick={function() { handleUpload().catch(function() {}); }}
+          >
+            <FileUp size={16} />
+            {uploading ? "上传并处理中..." : draft.configured ? "上传并追加" : "上传并创建"}
+          </button>
         </div>
       </div>
     </div>
@@ -1051,33 +1415,21 @@ function StyleForm({ draft, patch, patchExample, setModal }) {
 }
 
 function KnowledgeForm({ draft, patch }) {
-  const provider = draft.provider || "aliyun_bailian";
   return (
     <div className="form-grid">
-      <Field label="ID"><input value={draft.id || ""} onChange={(e) => patch("id", e.target.value)} /></Field>
-      <Field label="名称"><input value={draft.name || ""} onChange={(e) => patch("name", e.target.value)} /></Field>
-      <Field label="类型">
-        <select value={provider} onChange={(e) => patch("provider", e.target.value)}>
-          <option value="aliyun_bailian">阿里云百炼</option>
-        </select>
-      </Field>
-      <Field label="优先级"><input type="number" value={draft.priority || 0} onChange={(e) => patch("priority", Number(e.target.value))} /></Field>
+      <Field label="ID"><input value={draft.id || ""} onChange={function(e) { patch("id", e.target.value); }} /></Field>
+      <Field label="名称"><input value={draft.name || ""} onChange={function(e) { patch("name", e.target.value); }} /></Field>
+      <Field label="优先级"><input type="number" value={draft.priority || 0} onChange={function(e) { patch("priority", Number(e.target.value)); }} /></Field>
       <Field label="未命中策略">
-        <select value={draft.fallbackPolicy || "clarify"} onChange={(e) => patch("fallbackPolicy", e.target.value)}>
+        <select value={draft.fallbackPolicy || "clarify"} onChange={function(e) { patch("fallbackPolicy", e.target.value); }}>
           <option value="clarify">资料不足先追问</option>
           <option value="general">允许通用经验回答</option>
         </select>
       </Field>
-      <Field label="Workspace ID" wide>
-        <input value={draft.workspaceId || ""} onChange={(e) => patch("workspaceId", e.target.value)} placeholder="llm-xxxxxxxx" />
-      </Field>
-      <Field label="Index ID" wide>
-        <input value={draft.indexId || ""} onChange={(e) => patch("indexId", e.target.value)} placeholder="阿里云百炼知识库 ID" />
-      </Field>
-      <Field label="描述" wide><input value={draft.description || ""} onChange={(e) => patch("description", e.target.value)} /></Field>
-      <Field label="标签，一行一个" wide><textarea value={lines(draft.tags)} onChange={(e) => patch("tags", splitLines(e.target.value))} /></Field>
+      <Field label="描述" wide><input value={draft.description || ""} onChange={function(e) { patch("description", e.target.value); }} /></Field>
+      <Field label="标签，一行一个" wide><textarea value={lines(draft.tags)} onChange={function(e) { patch("tags", splitLines(e.target.value)); }} /></Field>
       <Field label="路由示例问题，一行一个" wide>
-        <textarea value={lines(draft.routeExamples)} onChange={(e) => patch("routeExamples", splitLines(e.target.value))} />
+        <textarea value={lines(draft.routeExamples)} onChange={function(e) { patch("routeExamples", splitLines(e.target.value)); }} />
       </Field>
     </div>
   );

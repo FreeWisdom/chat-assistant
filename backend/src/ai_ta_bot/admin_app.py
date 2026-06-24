@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config
 from .admin.routers import config as config_router
+from .admin.routers import knowledge as knowledge_router
 from .admin.routers import runtime as runtime_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -24,13 +25,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ADMIN_CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-Admin-Token"],
 )
 if REACT_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(REACT_ASSETS_DIR)), name="react-assets")
 
 app.include_router(config_router.router)
+app.include_router(knowledge_router.router)
 app.include_router(runtime_router.router)
 
 

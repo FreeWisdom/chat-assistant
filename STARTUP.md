@@ -65,8 +65,14 @@ python -m ai_ta_bot
 
 注意：
 - `ALIBABA_CLOUD_ACCESS_KEY_ID` 和 `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
-  必须有阿里云百炼 `sfm:Retrieve` 权限，并能访问配置中的 Workspace。
-- `config/bot.yaml` 中每个知识库必须填写百炼 `workspaceId` 和 `indexId`。
+  必须能访问配置中的 Workspace。只做问答时需要检索权限；通过管理页上传、
+  创建或追加知识库时，还需要百炼数据管理写权限和对应业务空间成员权限。
+- 在 `backend/.env` 配置一次 `ALIYUN_BAILIAN_WORKSPACE_ID`。该值和云端
+  Index/Job/Document ID 都是服务端内部信息，不应返回用户页面。
+- 用户只需在页面填写知识库名称并上传文档，后端自动创建或追加知识库。
+- 上传建库后在知识库详情中刷新任务状态，确认 `COMPLETED` 后再做问答验证。
+- 新建知识库并完成群绑定后，需要重启机器人加载最新配置；向同一个
+  `indexId` 追加文档通常不需要重启机器人。
 - 默认要求显式配置 `LISTEN_GROUPS`，多个群用英文逗号分隔；未配置会拒绝启动。
 - `BOT_MENTION_NAMES` 需要填写本账号在群内可能显示的昵称，才能准确识别
   `@机器人` 和引用机器人消息；多个昵称用英文逗号分隔。

@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_ta_bot.configuration import CourseManager
 
@@ -8,9 +9,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProjectPathTests(unittest.TestCase):
-    def test_configured_knowledge_bases_are_aliyun_cloud_indexes(self):
-        manager = CourseManager()
-        manager.load(ROOT / "config" / "bot.yaml")
+    def test_placeholder_cloud_ids_are_not_treated_as_runtime_config(self):
+        with patch(
+            "ai_ta_bot.configuration.loader.config.ALIYUN_BAILIAN_WORKSPACE_ID",
+            "",
+        ):
+            manager = CourseManager()
+            manager.load(ROOT / "config" / "bot.yaml")
 
         self.assertEqual(len(manager.knowledge_bases), 2)
         for knowledge_base in manager.knowledge_bases.values():
@@ -18,8 +23,8 @@ class ProjectPathTests(unittest.TestCase):
                 knowledge_base.provider,
                 "aliyun_bailian",
             )
-            self.assertTrue(knowledge_base.workspace_id)
-            self.assertTrue(knowledge_base.index_id)
+            self.assertFalse(knowledge_base.workspace_id)
+            self.assertFalse(knowledge_base.index_id)
 
     def test_two_approved_groups_use_hand_raise_and_separate_knowledge_bases(self):
         manager = CourseManager()

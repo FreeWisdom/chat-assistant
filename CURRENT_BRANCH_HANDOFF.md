@@ -8,16 +8,20 @@
 
 ## 一页结论
 
-当前分支已经把机器人从“项目内自建知识库”改成“只调用云知识库 API”：
+当前分支已经把机器人从“项目内自建知识库”改成“由页面管理阿里云百炼云知识库”：
 
 - 删除本地文档上传、网页抓取、切片、关键词检索、Chroma 向量索引。
 - 新增阿里云百炼 Retrieve API 适配器。
+- 新增页面上传文档、创建知识库、追加文档和查询索引任务状态。
+- 新增文档列表、替换、删除、版本历史和 SQLite 文档记录。
+- 替换采用“新版本成功后再删除旧版本”，失败时继续使用旧版本。
+- 上传文件只做流式转发，不在项目目录长期保存。
 - 保留 DeepSeek 问题路由、联网搜索、回答润色、微信群监听和可靠回复链路。
 - 两个群继续绑定各自独立的知识库，不会跨群混用资料。
-- 管理端改为配置百炼 `Workspace ID` 和 `Index ID`。
+- 管理端只需配置百炼 `Workspace ID`，首次建库后自动保存 `Index ID`。
 - 当前代码测试通过，但尚未使用真实百炼知识库完成联调。
 
-下一步工作重心只有一个：**先使用真实百炼凭证和知识库 ID 打通检索闭环，再进行两个微信群的真机回复回归。**
+下一步工作重心只有一个：**使用真实百炼凭证从页面上传文档，打通“建库—索引—检索—群回复”闭环。**
 
 ## 当前产品能力
 
@@ -62,7 +66,31 @@
 - 超时控制与失败重试。
 - 将百炼 `Text`、`Score`、`Metadata` 转换为统一回答上下文。
 
-### 2. 删除本地知识库工程
+### 2. 云端文档上传和建库
+
+新增管理端完整流程：
+
+```text
+页面选择文档
+→ ApplyFileUploadLease
+→ 按百炼返回的 URL/Method/Headers 上传二进制文件
+→ AddFile
+→ DescribeFile 等待解析完成
+→ CreateIndex + SubmitIndexJob
+  或 SubmitIndexAddDocumentsJob 追加到已有知识库
+→ GetIndexJobStatus 查询索引状态
+→ 自动保存 Index ID、Job ID、文档 ID 和任务状态
+```
+
+页面支持 PDF、Word、PPT、Excel、WPS、Markdown、TXT、EPUB 和 MOBI。
+文档生命周期信息保存在 `runtime/bot_state.db`：
+
+- 一个逻辑文档对应多个版本。
+- 当前有效版本、处理中版本和历史版本分别记录。
+- 云端文件 ID 与任务 ID 不返回用户页面。
+- 删除采用本地软删除保留操作历史，云端内容从检索中永久移除。
+
+### 3. 删除本地知识库工程
 
 已删除：
 
@@ -73,11 +101,11 @@
 - 文档切片逻辑。
 - 关键词检索器。
 - Chroma 和 SentenceTransformer 向量检索。
-- 本地知识文件上传 API。
-- 管理端知识文件上传界面。
+- 旧的本地知识文件上传 API。
+- 旧的本地知识文件管理界面。
 - 向量索引运行目录及相关依赖、配置。
 
-### 3. 配置和管理端
+### 4. 配置和管理端
 
 知识库配置现在只保存非敏感信息：
 
@@ -86,7 +114,10 @@ knowledgeBases:
   - id: fuye-projects
     provider: aliyun_bailian
     workspaceId: 实际业务空间ID
-    indexId: 实际知识库ID
+    indexId: 页面建库后自动生成
+    indexJobId: 最近一次索引任务ID
+    indexStatus: PENDING
+    documentIds: [已上传文档ID]
 ```
 
 AccessKey 只允许放在 `backend/.env` 或系统环境变量：
@@ -97,7 +128,7 @@ ALIBABA_CLOUD_ACCESS_KEY_SECRET=
 ALIYUN_BAILIAN_ENDPOINT=bailian.cn-beijing.aliyuncs.com
 ```
 
-### 4. 保留的稳定能力
+### 5. 保留的稳定能力
 
 本次改造没有删除：
 
@@ -115,12 +146,12 @@ ALIYUN_BAILIAN_ENDPOINT=bailian.cn-beijing.aliyuncs.com
 
 最近一次完整验证结果：
 
-- 后端测试：`67 passed`
+- 后端测试：以 `.\scripts\self-test.ps1` 最近一次结果为准
 - 附加子测试：`7 passed`
 - Python 源码编译：通过
 - React 管理端生产构建：通过
 - Git 空白字符检查：通过
-- 阿里云百炼 SDK 请求参数构造：通过
+- 阿里云百炼上传、建库、追加和任务状态请求参数构造：通过
 - 云知识库配置模型校验：通过
 - 本地知识库旧代码残留扫描：`0`
 - 微信机器人后台进程：未运行
@@ -137,7 +168,7 @@ ALIYUN_BAILIAN_ENDPOINT=bailian.cn-beijing.aliyuncs.com
 
 1. `backend/.env` 中没有填写真实阿里云 AccessKey。
 2. `config/bot.yaml` 中两个知识库仍是占位 `workspaceId/indexId`。
-3. 阿里云百炼中需要准备两个可检索的真实知识库。
+3. 尚未从管理页执行真实文件上传和知识库创建。
 4. 尚未执行真实 Retrieve API 请求。
 5. 尚未执行迁移后的两群真机监听和回复测试。
 
@@ -149,22 +180,22 @@ ALIYUN_BAILIAN_ENDPOINT=bailian.cn-beijing.aliyuncs.com
 
 ## 下一步工作重心
 
-### P0：打通真实百炼知识库检索
+### P0：打通页面建库和真实百炼检索
 
 这是当前唯一的首要任务。
 
-1. 在百炼创建或确认两个知识库：
-   - 项目研究知识库
-   - 饮食打卡知识库
-2. 将现有业务资料上传到对应知识库并等待索引完成。
-3. 创建最小权限的阿里云 RAM 用户或凭证，至少具备知识库检索权限。
-4. 填写 `backend/.env` 中的 AccessKey。
-5. 填写两个知识库的真实 `workspaceId/indexId`。
-6. 分别执行项目类和饮食类问题的真实 API 冒烟测试。
+1. 创建具备百炼文件、知识库和检索权限的 RAM 凭证，并加入对应业务空间。
+2. 填写 `backend/.env` 中的 AccessKey。
+3. 在管理页分别新建“项目研究”和“饮食打卡”知识库配置。
+4. 填写真实 `Workspace ID`，上传各自文档并提交建库。
+5. 刷新索引任务状态，确认两个任务均为 `COMPLETED`。
+6. 将两个知识库绑定到各自群，保存配置并重启机器人。
+7. 分别执行项目类和饮食类问题的真实 API 冒烟测试。
 
 完成标准：
 
 - 两个知识库都能返回相关内容。
+- 页面生成并保存正确的 `Index ID`，追加文档不会新建重复知识库。
 - 返回结果分数、文档名和正文能够被机器人正确解析。
 - 无结果、超时、权限错误时不会编造知识库答案。
 

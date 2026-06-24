@@ -75,10 +75,13 @@ styles:
 knowledgeBases:
 - id: fuye-projects
   name: 副业项目云知识库
-  description: 阿里云百炼中的副业项目、创业思路、赚钱方法、案例分析和常见问题
+  description: 副业项目、创业思路、赚钱方法、案例分析和常见问题
   provider: aliyun_bailian
-  workspaceId: your-aliyun-workspace-id
+  workspaceId: ''
   indexId: your-fuye-index-id
+  indexJobId: ''
+  indexStatus: ''
+  documentIds: []
   tags:
   - 副业
   - 赚钱
@@ -94,10 +97,13 @@ knowledgeBases:
   - 小红书引流怎么变现
 - id: food-checkin
   name: 饮食打卡云知识库
-  description: 阿里云百炼中的日常饮食、营养搭配、热量估算和减脂资料
+  description: 日常饮食、营养搭配、热量估算和减脂资料
   provider: aliyun_bailian
-  workspaceId: your-aliyun-workspace-id
+  workspaceId: ''
   indexId: your-food-index-id
+  indexJobId: ''
+  indexStatus: ''
+  documentIds: []
   tags:
   - 饮食
   - 营养
@@ -111,6 +117,25 @@ knowledgeBases:
   - 今天这样吃适合减脂吗
   - 蛋白质吃够了吗
   - 晚餐怎么搭配
+- id: kb-1782290721222
+  name: 新云知识库1
+  description: 用于回答微信群内的相关问题
+  provider: aliyun_bailian
+  workspaceId: llm-6v6it30v87ozbnwf
+  indexId: 06c74lojhj
+  indexJobId: 5e92378ed552455bae021e699ab99e90
+  indexStatus: COMPLETED
+  documentIds:
+  - file_b5f9032ba61741a1941194432ee312a9_12549138
+  - file_0c01ab8a3e6a4f53a802669c1a76a11e_12549138
+  - file_8092517a2378415381b748af013ffce1_12549138
+  - file_5d594d02a3a34ce8a3bcae393543f2b7_12549138
+  - file_e1f54baf8143414da6b95481d37277e8_12549138
+  - file_a513e28c7e6a419a9a28b3fff1a5c94f_12549138
+  tags: []
+  priority: 0
+  fallbackPolicy: clarify
+  routeExamples: []
 bindings:
 - group: 项目研究
   botId: fuye-assistant

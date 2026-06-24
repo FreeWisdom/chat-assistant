@@ -15,25 +15,37 @@ def require_sync_token(x_admin_token: str | None = Header(default=None)):
 
 @router.get("/api/config")
 def get_config():
-    return {"config": config_store.read_config()}
+    return {"config": config_store.public_config(config_store.read_config())}
 
 
 @router.post("/api/validate")
 def validate_config(payload: dict):
     try:
-        normalized = config_store.normalize_config(payload)
+        merged = config_store.merge_public_config(
+            payload,
+            config_store.read_config(),
+        )
+        normalized = config_store.normalize_config(merged)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "errors": config_store.validate_config(normalized), "config": normalized}
+    return {
+        "ok": True,
+        "errors": config_store.validate_config(normalized),
+        "config": config_store.public_config(normalized),
+    }
 
 
 @router.post("/api/config")
 def save_config(payload: dict):
     try:
-        saved = config_store.write_config(payload)
+        merged = config_store.merge_public_config(
+            payload,
+            config_store.read_config(),
+        )
+        saved = config_store.write_config(merged)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "config": saved}
+    return {"ok": True, "config": config_store.public_config(saved)}
 
 
 @router.get("/api/backups")

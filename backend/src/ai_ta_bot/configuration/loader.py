@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from .. import config
 from .models import (
     BotProfile,
     BotStyle,
@@ -83,8 +84,22 @@ class CourseManager:
                 name=item["name"],
                 description=item.get("description", ""),
                 provider=item.get("provider", "aliyun_bailian"),
-                workspace_id=item.get("workspaceId", ""),
-                index_id=item.get("indexId", ""),
+                workspace_id=(
+                    (
+                        ""
+                        if str(item.get("workspaceId", "")).startswith("your-")
+                        else item.get("workspaceId", "")
+                    )
+                    or config.ALIYUN_BAILIAN_WORKSPACE_ID
+                ),
+                index_id=(
+                    ""
+                    if str(item.get("indexId", "")).startswith("your-")
+                    else item.get("indexId", "")
+                ),
+                index_job_id=item.get("indexJobId", ""),
+                index_status=item.get("indexStatus", ""),
+                document_ids=item.get("documentIds", []),
                 tags=item.get("tags", []),
                 priority=int(item.get("priority", 0)),
                 fallback_policy=item.get("fallbackPolicy", "clarify"),

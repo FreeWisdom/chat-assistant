@@ -20,6 +20,7 @@ chat-assistant/
 │   │   ├── config_store.py          # 配置持久化（读写 config/bot.yaml）
 │   │   ├── admin/                   # 管理端 API 模块
 │   │   │   ├── routers/config.py    #   配置 CRUD + 同步
+│   │   │   ├── routers/knowledge.py #   百炼文档上传、建库和任务状态
 │   │   │   ├── routers/runtime.py   #   进程重启
 │   │   │   └── services/process_manager.py
 │   │   ├── application/             # 应用层：编排启动、问答流程
@@ -80,6 +81,7 @@ pip install -e .
 LLM_API_KEY=sk-your-deepseek-key
 ALIBABA_CLOUD_ACCESS_KEY_ID=your-access-key-id
 ALIBABA_CLOUD_ACCESS_KEY_SECRET=your-access-key-secret
+ALIYUN_BAILIAN_WORKSPACE_ID=llm-xxxxxxxx
 DRY_RUN=true
 LISTEN_GROUPS=项目研究,每日饮食打卡🍽️
 REQUIRE_LISTEN_GROUPS=true
@@ -107,7 +109,29 @@ bindings:
     replyTriggers: ["#举手"]
 ```
 
-通过管理页 `http://127.0.0.1:8000` 也可以图形化编辑。
+通过管理页 `http://127.0.0.1:8000` 也可以图形化编辑。云服务凭证、
+Workspace、Index 和任务 ID 都由平台后端管理，不返回用户浏览器。用户新建
+知识库时只需填写名称并选择文档；后端会依次申请
+上传租约、把文件直接传给百炼、等待文件解析、创建知识库并提交索引任务。
+已有知识库时，同一个入口会把新文档追加到原知识库。页面可刷新查看
+处理状态，生成的 `Index ID`、`Job ID` 和文档 ID 只会写回服务端
+`config/bot.yaml`，项目不会长期保存用户上传的文件。
+
+管理页同时提供文档列表、版本历史、替换和删除：
+
+- 新增文档会建立独立的逻辑文档记录和第一个版本。
+- 替换文档会先上传并索引新版本；只有新版本成功后才移除旧版本。
+- 新版本失败时继续保留旧版本，避免机器人突然失去原有资料。
+- 删除文档会从知识库移除当前版本，并保留本地版本操作记录。
+- 云端文件 ID、任务 ID 和校验值只存服务端 SQLite，不返回浏览器。
+
+RAM 授权、业务空间成员关系和平台 Workspace 只需由运营方初始化一次。之后
+每个用户上传文档时，后端在统一业务空间中为其创建独立知识库，无需用户注册
+阿里云账号或重复配置云端权限。
+
+支持的文档类型：`doc`、`docx`、`wps`、`ppt`、`pptx`、`xls`、`xlsx`、
+`md`、`txt`、`pdf`、`epub`、`mobi`。默认单次最多 10 个文件、每个文件
+最大 100 MB，可通过 `backend/.env` 中的 `KNOWLEDGE_UPLOAD_*` 配置调整。
 
 回答前先由 DeepSeek 做问题路由：稳定通用问题直接回答；依赖群资料的问题
 通过阿里云百炼 Retrieve API 检索当前群绑定的云知识库；需要天气、新闻、
@@ -156,7 +180,7 @@ python -m ai_ta_bot
 | 维度 | 选择 | 原因 |
 |------|------|------|
 | 配置 | `config/bot.yaml` + `backend/.env` | 业务配置与密钥分离；YAML 不做敏感信息 |
-| 知识库 | 阿里云百炼 Retrieve API | 文档、切片、向量和索引生命周期由云服务负责 |
+| 知识库 | 阿里云百炼文件/索引/Retrieve API | 页面负责发起上传和建库，文档解析、切片、向量和索引生命周期由云服务负责 |
 | 运行时 | `runtime/` 独立目录 | SQLite、日志、索引不与源码混合 |
 | 前端 | 仅 admin-ui（React） | 删除旧 static/ templates/，单一前端 |
 | 包名 | `ai_ta_bot`（下划线） | 合法 Python 包名，支持 `python -m` |

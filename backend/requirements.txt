@@ -4,5 +4,6 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 fastapi>=0.111.0
 uvicorn>=0.30.0
+python-multipart>=0.0.9
 requests>=2.32.0
 alibabacloud-bailian20231229>=2.13.1,<3.0.0

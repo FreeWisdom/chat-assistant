@@ -982,6 +982,22 @@ button {
   overflow: hidden;
 }
 
+.detail-modal.upload-panel {
+  width: min(640px, 100%);
+  max-height: none;
+}
+
+.upload-body {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.upload-status-bar {
+  display: flex;
+  align-items: center;
+}
+
 .modal-head,
 .modal-foot {
   display: flex;
@@ -1090,6 +1106,238 @@ textarea {
   border: 1px solid rgba(23, 37, 34, 0.1);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.66);
+}
+
+.cloud-upload-panel {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(23, 37, 34, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.cloud-upload-head,
+.cloud-upload-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cloud-upload-head strong {
+  color: #34413e;
+  font-size: 14px;
+}
+
+.cloud-upload-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cloud-job-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #765a16;
+  background: rgba(229, 174, 39, 0.14);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.cloud-job-status.status-completed {
+  color: #14613c;
+  background: rgba(7, 193, 96, 0.12);
+}
+
+.cloud-job-status.status-failed {
+  color: #9b3131;
+  background: rgba(216, 65, 65, 0.12);
+}
+
+.selected-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.selected-file-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: #245349;
+  background: rgba(7, 193, 96, 0.1);
+  font-size: 12px;
+}
+
+.cloud-upload-panel > em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.document-manager {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  margin-top: 8px;
+  border: 1px solid rgba(23, 37, 34, 0.1);
+  border-radius: 14px;
+  background: rgba(248, 251, 250, 0.84);
+}
+
+.document-manager-head,
+.document-card-main,
+.document-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doc-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.document-manager-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.document-list {
+  display: grid;
+  gap: 10px;
+}
+
+.document-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(23, 37, 34, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.document-card-main > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.document-card-main strong {
+  overflow: hidden;
+  color: #263633;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-card-main span,
+.document-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.document-status {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #765a16;
+  background: rgba(229, 174, 39, 0.14);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.document-status.status-active {
+  color: #14613c;
+  background: rgba(7, 193, 96, 0.12);
+}
+
+.document-status.status-failed,
+.document-status.status-deleted {
+  color: #9b3131;
+  background: rgba(216, 65, 65, 0.1);
+}
+
+.document-actions {
+  justify-content: flex-end;
+}
+
+.document-actions .disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.document-delete-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  color: var(--danger);
+  background: rgba(192, 43, 34, 0.07);
+}
+
+.document-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.version-history {
+  border-top: 1px solid rgba(23, 37, 34, 0.08);
+  padding-top: 9px;
+}
+
+.version-history summary {
+  cursor: pointer;
+  color: #38645a;
+  font-size: 12px;
+}
+
+.version-history > div {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) auto auto auto;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.version-row > span:first-child {
+  overflow: hidden;
+  color: #34413e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-row em {
+  color: #38645a;
+  font-style: normal;
+}
+
+.version-row b,
+.document-error {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .sub-head {

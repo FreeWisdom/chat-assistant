@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 import re
 import shutil
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import yaml
 
@@ -14,6 +17,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "bot.yaml"
 BACKUP_DIR = PROJECT_ROOT / "runtime" / "backups"
 SUPPORTED_PROVIDERS = {"aliyun_bailian"}
+INTERNAL_KNOWLEDGE_FIELDS = {
+    "provider",
+    "workspaceId",
+    "indexId",
+    "indexJobId",
+    "indexStatus",
+    "documentIds",
+}
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -50,6 +61,11 @@ def _listify(value: Any) -> list:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _configured_value(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text.startswith("your-") else text
 
 
 def _ensure_unique_ids(items: list[dict[str, Any]], section: str) -> list[str]:
@@ -115,6 +131,13 @@ def normalize_config(data: dict[str, Any]) -> dict[str, Any]:
             "provider": provider,
             "workspaceId": str(item.get("workspaceId", "")).strip(),
             "indexId": str(item.get("indexId", "")).strip(),
+            "indexJobId": str(item.get("indexJobId", "")).strip(),
+            "indexStatus": str(item.get("indexStatus", "")).strip(),
+            "documentIds": [
+                str(v).strip()
+                for v in _listify(item.get("documentIds"))
+                if str(v).strip()
+            ],
             "tags": [str(v).strip() for v in _listify(item.get("tags")) if str(v).strip()],
             "priority": int(item.get("priority") or 0),
             "fallbackPolicy": str(item.get("fallbackPolicy", "")).strip() or "clarify",
@@ -170,6 +193,15 @@ def validate_config(data: dict[str, Any]) -> list[str]:
         if int(style.get("maxChars") or 0) <= 0:
             errors.append(f"风格 {style.get('id')} 的 maxChars 必须大于 0")
 
+    bound_kb_ids = {
+        str(kb_id).strip()
+        for binding in data.get("bindings", [])
+        for kb_id in binding.get("knowledgeBaseIds", [])
+        if str(kb_id).strip()
+    }
+
+    from . import config as app_config
+
     for kb in data.get("knowledgeBases", []):
         if not kb.get("name"):
             errors.append(f"知识库 {kb.get('id') or '<unknown>'} 缺少名称")
@@ -177,13 +209,19 @@ def validate_config(data: dict[str, Any]) -> list[str]:
         if provider not in SUPPORTED_PROVIDERS:
             errors.append(f"知识库 {kb.get('id') or '<unknown>'} 的 provider 不支持: {provider}")
             continue
-        if not kb.get("workspaceId"):
+        resolved_workspace = (
+            _configured_value(kb.get("workspaceId"))
+            or app_config.ALIYUN_BAILIAN_WORKSPACE_ID
+        )
+        if kb.get("id") in bound_kb_ids and not resolved_workspace:
             errors.append(
-                f"阿里云百炼知识库 {kb.get('id') or '<unknown>'} 缺少 workspaceId"
+                f"已绑定群的云知识库 {kb.get('id') or '<unknown>'} 尚未完成平台配置"
             )
-        if not kb.get("indexId"):
-            errors.append(
-                f"阿里云百炼知识库 {kb.get('id') or '<unknown>'} 缺少 indexId"
+        resolved_index = _configured_value(kb.get("indexId"))
+        if kb.get("id") in bound_kb_ids and not resolved_index:
+            logger.warning(
+                "已绑定群的云知识库 %s 尚未创建完成，检索时将被跳过",
+                kb.get("id") or "<unknown>",
             )
 
     for index, binding in enumerate(data.get("bindings", [])):
@@ -207,19 +245,150 @@ def read_config() -> dict[str, Any]:
     return normalize_config(_load_yaml(CONFIG_PATH))
 
 
-def write_config(data: dict[str, Any]) -> dict[str, Any]:
+def public_config(data: dict[str, Any]) -> dict[str, Any]:
+    """Return browser-safe config without cloud vendor identifiers."""
+    normalized = normalize_config(data)
+    result = {
+        key: value
+        for key, value in normalized.items()
+        if key != "knowledgeBases"
+    }
+    result["knowledgeBases"] = []
+    for item in normalized.get("knowledgeBases", []):
+        public_item = {
+            key: value
+            for key, value in item.items()
+            if key not in INTERNAL_KNOWLEDGE_FIELDS
+        }
+        public_item["indexStatus"] = item.get("indexStatus", "")
+        public_item["configured"] = bool(_configured_value(item.get("indexId")))
+        public_item["canRefreshStatus"] = bool(
+            _configured_value(item.get("indexJobId"))
+        )
+        public_item["documentCount"] = len(item.get("documentIds", []))
+        result["knowledgeBases"].append(public_item)
+    return result
+
+
+def merge_public_config(
+    payload: dict[str, Any],
+    existing: dict[str, Any],
+) -> dict[str, Any]:
+    """Restore server-only knowledge fields before validating and saving."""
+    from . import config
+
+    existing_by_id = {
+        item.get("id"): item
+        for item in existing.get("knowledgeBases", [])
+        if item.get("id")
+    }
+    merged = {
+        **payload,
+        "knowledgeBases": [],
+    }
+    for item in _listify(payload.get("knowledgeBases")):
+        kb_id = str(item.get("id", "")).strip()
+        current = existing_by_id.get(kb_id, {})
+        merged["knowledgeBases"].append({
+            **item,
+            "provider": current.get("provider", "aliyun_bailian"),
+            "workspaceId": (
+                _configured_value(current.get("workspaceId"))
+                or config.ALIYUN_BAILIAN_WORKSPACE_ID
+            ),
+            "indexId": _configured_value(current.get("indexId")),
+            "indexJobId": current.get("indexJobId", ""),
+            "indexStatus": current.get("indexStatus", ""),
+            "documentIds": current.get("documentIds", []),
+        })
+    return merged
+
+
+def write_config(
+    data: dict[str, Any],
+    *,
+    create_backup: bool = True,
+) -> dict[str, Any]:
     normalized = normalize_config(data)
     errors = validate_config(normalized)
     if errors:
         raise ValueError("\n".join(errors))
 
-    if CONFIG_PATH.exists():
+    if create_backup and CONFIG_PATH.exists():
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(CONFIG_PATH, BACKUP_DIR / f"courses-{stamp}.yaml")
 
     _dump_yaml(CONFIG_PATH, normalized)
     return normalized
+
+
+def upsert_knowledge_base(item: dict[str, Any]) -> dict[str, Any]:
+    """Persist one cloud knowledge base while preserving the rest of config."""
+    kb_id = str(item.get("id", "")).strip()
+    if not kb_id:
+        raise ValueError("知识库 ID 不能为空")
+
+    config_data = read_config()
+    knowledge_bases = config_data.get("knowledgeBases", [])
+    existing_index = next(
+        (
+            index
+            for index, knowledge_base in enumerate(knowledge_bases)
+            if knowledge_base.get("id") == kb_id
+        ),
+        None,
+    )
+    if existing_index is None:
+        knowledge_bases.append(item)
+    else:
+        knowledge_bases[existing_index] = {
+            **knowledge_bases[existing_index],
+            **item,
+        }
+    config_data["knowledgeBases"] = knowledge_bases
+    return write_config(config_data)
+
+
+def update_knowledge_job_status(
+    kb_id: str,
+    status: str,
+) -> dict[str, Any]:
+    return update_knowledge_cloud_state(
+        kb_id,
+        index_status=status,
+    )
+
+
+def update_knowledge_cloud_state(
+    kb_id: str,
+    *,
+    index_job_id: str | None = None,
+    index_status: str | None = None,
+    document_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    config_data = read_config()
+    knowledge_base = next(
+        (
+            item
+            for item in config_data.get("knowledgeBases", [])
+            if item.get("id") == kb_id
+        ),
+        None,
+    )
+    if knowledge_base is None:
+        raise ValueError(f"知识库不存在: {kb_id}")
+    if index_job_id is not None:
+        knowledge_base["indexJobId"] = str(index_job_id or "").strip()
+    if index_status is not None:
+        knowledge_base["indexStatus"] = str(index_status or "").strip()
+    if document_ids is not None:
+        knowledge_base["documentIds"] = list(dict.fromkeys(
+            str(item).strip()
+            for item in document_ids
+            if str(item).strip()
+        ))
+    return write_config(config_data, create_backup=False)
 
 
 def _file_info(file: Path) -> dict[str, Any]:

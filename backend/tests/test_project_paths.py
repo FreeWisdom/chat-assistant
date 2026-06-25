@@ -17,14 +17,29 @@ class ProjectPathTests(unittest.TestCase):
             manager = CourseManager()
             manager.load(ROOT / "config" / "bot.yaml")
 
-        self.assertEqual(len(manager.knowledge_bases), 2)
-        for knowledge_base in manager.knowledge_bases.values():
+        placeholder_ids = {"fuye-projects", "food-checkin"}
+        self.assertTrue(
+            placeholder_ids.issubset(manager.knowledge_bases),
+        )
+        for knowledge_base_id in placeholder_ids:
+            knowledge_base = manager.knowledge_bases[knowledge_base_id]
             self.assertEqual(
                 knowledge_base.provider,
                 "aliyun_bailian",
             )
             self.assertFalse(knowledge_base.workspace_id)
             self.assertFalse(knowledge_base.index_id)
+
+        configured = [
+            knowledge_base
+            for knowledge_base_id, knowledge_base
+            in manager.knowledge_bases.items()
+            if knowledge_base_id not in placeholder_ids
+        ]
+        self.assertTrue(configured)
+        for knowledge_base in configured:
+            self.assertTrue(knowledge_base.workspace_id)
+            self.assertTrue(knowledge_base.index_id)
 
     def test_two_approved_groups_use_hand_raise_and_separate_knowledge_bases(self):
         manager = CourseManager()

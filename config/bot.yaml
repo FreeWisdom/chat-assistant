@@ -123,7 +123,7 @@ knowledgeBases:
   provider: aliyun_bailian
   workspaceId: llm-6v6it30v87ozbnwf
   indexId: 06c74lojhj
-  indexJobId: 5e92378ed552455bae021e699ab99e90
+  indexJobId: f105636d20e746c782b83d319e1bf007
   indexStatus: COMPLETED
   documentIds:
   - file_b5f9032ba61741a1941194432ee312a9_12549138
@@ -132,6 +132,9 @@ knowledgeBases:
   - file_5d594d02a3a34ce8a3bcae393543f2b7_12549138
   - file_e1f54baf8143414da6b95481d37277e8_12549138
   - file_a513e28c7e6a419a9a28b3fff1a5c94f_12549138
+  - file_802f734ffaab4cd68a0a5611816d9770_12549138
+  - file_d60a5d283c12459b8cfe32be1ddc4fd5_12549138
+  - file_00ed6c08d436425eb7835703e6072561_12549138
   tags: []
   priority: 0
   fallbackPolicy: clarify

@@ -7,7 +7,6 @@ import {
   Clock3,
   Database,
   FileClock,
-  FileUp,
   HardDrive,
   Home,
   Layers3,
@@ -29,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import KnowledgeWorkspace from "./KnowledgeWorkspace.jsx";
 
 const sectionMeta = {
   home: { title: "首页", icon: Home, accent: "green" },
@@ -90,12 +90,6 @@ function splitLines(value) {
     .filter(Boolean);
 }
 
-function providerLabel(provider) {
-  return {
-    aliyun_bailian: "阿里云百炼",
-  }[provider || "aliyun_bailian"] || provider;
-}
-
 function classNames(...items) {
   return items.filter(Boolean).join(" ");
 }
@@ -131,8 +125,6 @@ function defaultKnowledgeBase() {
     name: "新云知识库",
     description: "用于回答微信群内的相关问题",
     provider: "aliyun_bailian",
-    workspaceId: "",
-    indexId: "",
     tags: [],
     priority: 0,
     fallbackPolicy: "clarify",
@@ -191,8 +183,6 @@ function validateModalDraft(type, draft, config, currentIndex) {
     if (!draft.name?.trim()) errors.push("知识库名称必填");
     const provider = draft.provider || "aliyun_bailian";
     if (provider !== "aliyun_bailian") errors.push(`暂不支持的知识库类型：${provider}`);
-    if (!draft.workspaceId?.trim()) errors.push("阿里云百炼 Workspace ID 必填");
-    if (!draft.indexId?.trim()) errors.push("阿里云百炼知识库 Index ID 必填");
   }
 
   if (type === "bindings") {
@@ -215,6 +205,7 @@ export default function App() {
   const [active, setActive] = useState("home");
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState(null);
+  const [knowledgeViewId, setKnowledgeViewId] = useState("");
   const [status, setStatus] = useState({ tone: "muted", text: "正在连接本地同步服务..." });
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -284,6 +275,11 @@ export default function App() {
   }
 
   function openModal(type, index = null) {
+    if (type === "knowledge") {
+      const item = getItem(type, index);
+      setKnowledgeViewId(item?.id || "");
+      return;
+    }
     const item = getItem(type, index);
     setModal({ type, index, draft: structuredClone(item), error: "" });
   }
@@ -311,6 +307,11 @@ export default function App() {
       knowledge: next.knowledgeBases,
       bindings: next.bindings,
     };
+    if (type === "knowledge") {
+      setActive("knowledge");
+      setKnowledgeViewId(arrays.knowledge.at(-1).id);
+      return;
+    }
     openModalFromDraft(type, arrays[type].length - 1, arrays[type].at(-1));
   }
 
@@ -319,7 +320,11 @@ export default function App() {
   }
 
   function removeItem(type, index) {
-    const confirmed = window.confirm("确认删除这条配置？删除后还需要保存才会写入本地。");
+    const confirmed = window.confirm(
+      type === "knowledge"
+        ? "确认删除这条知识库配置？此操作只会从本地配置移除，不会删除云端知识库和文档；保存配置后生效。"
+        : "确认删除这条配置？删除后还需要保存才会写入本地。",
+    );
     if (!confirmed) return;
     const next = structuredClone(config);
     if (type === "bots") next.botProfiles.splice(index, 1);
@@ -327,7 +332,20 @@ export default function App() {
     if (type === "knowledge") next.knowledgeBases.splice(index, 1);
     if (type === "bindings") next.bindings.splice(index, 1);
     setConfig(next);
+    if (type === "knowledge") setKnowledgeViewId("");
     setStatus({ tone: "muted", text: "已从页面移除，点击保存到脚本配置后写入本地。" });
+  }
+
+  async function saveKnowledgeDraft(originalId, draft) {
+    const index = config.knowledgeBases.findIndex((item) => item.id === originalId);
+    if (index < 0) throw new Error("知识库配置不存在，请返回列表后重试。");
+    const errors = validateModalDraft("knowledge", draft, config, index);
+    if (errors.length) throw new Error(errors.join("；"));
+    const next = structuredClone(config);
+    next.knowledgeBases[index] = { ...next.knowledgeBases[index], ...draft };
+    setConfig(next);
+    setKnowledgeViewId(draft.id);
+    setStatus({ tone: "muted", text: "知识库设置已更新到页面，点击保存配置后写入本地。" });
   }
 
   function saveModalDraft() {
@@ -373,7 +391,9 @@ export default function App() {
   }
 
   async function refreshKnowledgeJob(kbId) {
-    return requestJson(`/api/knowledge/${kbId}/job`);
+    const response = await requestJson(`/api/knowledge/${kbId}/job`);
+    if (response.config) setConfig(ensureConfig(response.config));
+    return response;
   }
 
   async function replaceKnowledgeDocument(kbId, documentId, file) {
@@ -430,6 +450,11 @@ export default function App() {
     addItem(type);
   }
 
+  function navigateSection(type) {
+    setActive(type);
+    if (type === "knowledge") setKnowledgeViewId("");
+  }
+
   return (
     <div className="app-shell">
       <aside className="side-rail">
@@ -451,7 +476,7 @@ export default function App() {
                 key={key}
                 type="button"
                 className={classNames("nav-item", active === key && "is-active")}
-                onClick={() => setActive(key)}
+                onClick={() => navigateSection(key)}
               >
                 <Icon size={18} />
                 <span>{meta.title}</span>
@@ -504,10 +529,34 @@ export default function App() {
             stats={stats}
             config={config}
             backups={backups}
-            onNavigate={setActive}
+            onNavigate={navigateSection}
             onCreate={createFromHome}
           />
         ) : (
+          active === "knowledge" ? (
+            <KnowledgeWorkspace
+              items={visibleItems}
+              knowledgeBases={config.knowledgeBases}
+              bindings={config.bindings}
+              query={query}
+              selectedId={knowledgeViewId}
+              onQueryChange={setQuery}
+              onCreate={() => addItem("knowledge")}
+              onSelect={setKnowledgeViewId}
+              onBack={() => setKnowledgeViewId("")}
+              onRemove={(index) => removeItem("knowledge", index)}
+              onSaveDraft={saveKnowledgeDraft}
+              onProvision={provisionKnowledge}
+              onRefreshJob={refreshKnowledgeJob}
+              onListDocuments={listKnowledgeDocuments}
+              onReplaceDocument={replaceKnowledgeDocument}
+              onDeleteDocument={deleteKnowledgeDocument}
+              onNavigateBindings={() => {
+                setKnowledgeViewId("");
+                setActive("bindings");
+              }}
+            />
+          ) : (
           <section className="content-panel config-only">
             <div className="panel-head">
               <div className="panel-title">
@@ -550,6 +599,7 @@ export default function App() {
               />
             )}
           </section>
+          )
         )}
       </main>
 
@@ -560,11 +610,6 @@ export default function App() {
           setModal={setModal}
           onClose={() => setModal(null)}
           onSave={saveModalDraft}
-          onProvision={provisionKnowledge}
-          onRefreshJob={refreshKnowledgeJob}
-          onListDocuments={listKnowledgeDocuments}
-          onReplaceDocument={replaceKnowledgeDocument}
-          onDeleteDocument={deleteKnowledgeDocument}
         />
       )}
     </div>
@@ -626,12 +671,7 @@ function buildHomeModel(config, backups) {
   const bindingWithKb = safeConfig.bindings.filter((binding) =>
     (binding.knowledgeBaseIds || []).some((kbId) => knowledgeBases.has(kbId)),
   ).length;
-  const kbWithSources = safeConfig.knowledgeBases.filter(
-    (kb) =>
-      (kb.provider || "aliyun_bailian") === "aliyun_bailian"
-      && Boolean(kb.workspaceId)
-      && Boolean(kb.indexId),
-  ).length;
+  const kbWithSources = safeConfig.knowledgeBases.filter((kb) => kb.configured).length;
 
   const completeness = [
     { label: "机器人已绑定风格", done: botWithStyle, total: safeConfig.botProfiles.length },
@@ -665,11 +705,11 @@ function buildHomeModel(config, backups) {
     .forEach((binding) => warnings.push({ title: `${binding.group || "未命名群"} 缺少有效知识库`, detail: "至少绑定一个存在的知识库。" }));
 
   safeConfig.knowledgeBases
-    .filter((kb) => !kb.workspaceId || !kb.indexId)
+    .filter((kb) => !kb.configured)
     .slice(0, 2)
     .forEach((kb) => warnings.push({
-      title: `${kb.name || kb.id} 云端标识不完整`,
-      detail: "进入知识库详情填写阿里云百炼 Workspace ID 和 Index ID。",
+      title: `${kb.name || kb.id} 尚未上传文档`,
+      detail: "进入知识库详情上传第一批文档，系统会自动创建云知识库。",
     }));
 
   const recentItems = [
@@ -697,7 +737,7 @@ function HomePage({ stats, config, backups, onNavigate, onCreate }) {
   const quickActions = [
     { title: "新建机器人", desc: "定义身份、职责、回答边界", icon: Bot, action: () => onCreate("bots") },
     { title: "新建风格", desc: "配置像真人一样的口吻", icon: WandSparkles, action: () => onCreate("styles") },
-    { title: "接入云知识库", desc: "配置百炼 Workspace 和 Index", icon: Database, action: () => onCreate("knowledge") },
+    { title: "接入云知识库", desc: "新建知识库并上传第一批文档", icon: Database, action: () => onCreate("knowledge") },
     { title: "绑定微信群", desc: "选择机器人、知识库和触发词", icon: MessageCircle, action: () => onCreate("bindings") },
   ];
   const scriptSteps = [
@@ -947,7 +987,6 @@ function ConfigList({ type, items, config, onEdit, onRemove }) {
 function renderAvatar(type, item) {
   if (type === "bots") return <Bot size={22} />;
   if (type === "styles") return <WandSparkles size={22} />;
-  if (type === "knowledge") return <Database size={22} />;
   return <MessageCircle size={22} />;
 }
 
@@ -959,13 +998,6 @@ function getTitle(type, item) {
 function getSubtitle(type, item, config) {
   if (type === "bots") return item.role || "未填写角色定位";
   if (type === "styles") return item.tone || "未填写风格说明";
-  if (type === "knowledge") {
-    const provider = item.provider || "aliyun_bailian";
-    const sourceText = item.workspaceId && item.indexId
-      ? `${item.workspaceId} / ${item.indexId}`
-      : "云端标识未配置完整";
-    return `${item.description || "未填写描述"} · ${providerLabel(provider)} · ${sourceText}`;
-  }
   if (type === "bindings") {
     const bot = config.botProfiles.find((profile) => profile.id === item.botId);
     return `机器人：${bot?.name || item.botId || "未绑定"}`;
@@ -976,7 +1008,6 @@ function getSubtitle(type, item, config) {
 function getChips(type, item, config) {
   if (type === "bots") return [item.id, `风格 ${item.styleId || "未绑定"}`].filter(Boolean);
   if (type === "styles") return [`${item.maxChars || 0} 字以内`, `${item.examples?.length || 0} 个示例`];
-  if (type === "knowledge") return [item.id, providerLabel(item.provider), item.fallbackPolicy === "general" ? "可通用回答" : "未命中先追问", ...(item.tags || []).slice(0, 4)];
   if (type === "bindings") {
     return [
       ...(item.knowledgeBaseIds || []).map((kbId) => config.knowledgeBases.find((kb) => kb.id === kbId)?.name || kbId),
@@ -992,34 +1023,9 @@ function DetailModal({
   setModal,
   onClose,
   onSave,
-  onProvision,
-  onRefreshJob,
-  onListDocuments,
-  onReplaceDocument,
-  onDeleteDocument,
 }) {
   const meta = sectionMeta[modal.type];
   const Icon = meta.icon;
-  const [docs, setDocs] = useState([]);
-  const [docsLoading, setDocsLoading] = useState(false);
-  const [docError, setDocError] = useState("");
-  const [showUpload, setShowUpload] = useState(false);
-
-  const kbId = modal.type === "knowledge" ? modal.draft.id : null;
-  useEffect(function() {
-    if (!kbId) return;
-    var kb = config.knowledgeBases.find(function(item) { return item.id === kbId; });
-    if (!kb || (!kb.configured && !kb.canRefreshStatus && !kb.documentCount)) {
-      setDocs([]);
-      return;
-    }
-    setDocsLoading(true);
-    setDocError("");
-    onListDocuments(kbId)
-      .then(function(res) { setDocs(res.documents || []); })
-      .catch(function(err) { setDocError(err.message || String(err)); })
-      .finally(function() { setDocsLoading(false); });
-  }, [kbId]);
 
   function patch(field, value) {
     setModal(function(current) { return { ...current, draft: { ...current.draft, [field]: value } }; });
@@ -1031,42 +1037,6 @@ function DetailModal({
       examples[index] = { ...examples[index], [field]: value };
       return { ...current, draft: { ...current.draft, examples } };
     });
-  }
-
-  async function handleRefresh() {
-    if (!kbId) return;
-    setDocsLoading(true);
-    try {
-      var res = await onRefreshJob(kbId);
-      if (res.documentRecords) setDocs(res.documentRecords);
-    } catch (err) {
-      setDocError(err.message || String(err));
-    } finally {
-      setDocsLoading(false);
-    }
-  }
-
-  async function handleReplace(docId, file) {
-    if (!file || !kbId) return;
-    try {
-      await onReplaceDocument(kbId, docId, file);
-      var res = await onListDocuments(kbId);
-      setDocs(res.documents || []);
-    } catch (err) {
-      setDocError(err.message || String(err));
-    }
-  }
-
-  async function handleDelete(doc) {
-    if (!kbId) return;
-    if (!window.confirm("确认删除\"" + doc.name + "\"？删除后机器人将无法再检索这份文档。")) return;
-    try {
-      await onDeleteDocument(kbId, doc.id);
-      var res = await onListDocuments(kbId);
-      setDocs(res.documents || []);
-    } catch (err) {
-      setDocError(err.message || String(err));
-    }
   }
 
   return (
@@ -1091,255 +1061,12 @@ function DetailModal({
           {modal.type === "styles" && (
             <StyleForm draft={modal.draft} patch={patch} patchExample={patchExample} setModal={setModal} />
           )}
-          {modal.type === "knowledge" && (
-            <KnowledgeForm draft={modal.draft} patch={patch} />
-          )}
-          {modal.type === "knowledge" && (
-            <DocumentManager
-              documents={docs}
-              docsLoading={docsLoading}
-              docError={docError}
-              onRefresh={handleRefresh}
-              onReplace={handleReplace}
-              onDelete={handleDelete}
-              onUpload={kbId ? function() { setShowUpload(true); } : null}
-            />
-          )}
           {modal.type === "bindings" && <BindingForm draft={modal.draft} config={config} patch={patch} />}
         </div>
 
         <div className="modal-foot">
           <button type="button" className="ghost-button" onClick={onClose}>取消</button>
           <button type="button" className="primary-button" onClick={onSave}>校验并保存详情</button>
-        </div>
-      </div>
-
-      {showUpload && kbId && (
-        <UploadModal
-          draft={modal.draft}
-          onProvision={onProvision}
-          onClose={function() { setShowUpload(false); }}
-          onDone={function() {
-            setShowUpload(false);
-            onListDocuments(kbId)
-              .then(function(res) { setDocs(res.documents || []); })
-              .catch(function() {});
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function knowledgeStatusLabel(draft) {
-  var status = draft.indexStatus;
-  var jobId = draft.indexJobId;
-  if (!jobId || (jobId && jobId.indexOf && jobId.indexOf("your-") === 0)) return "未部署";
-  if (!status) return "未部署";
-  var labels = {
-    PENDING: "索引任务排队中",
-    RUNNING: "索引构建中",
-    COMPLETED: "索引就绪",
-    FAILED: "索引失败",
-  };
-  return labels[status] || status;
-}
-
-function documentStatusLabel(status) {
-  var labels = {
-    PROCESSING: "处理中",
-    ACTIVE: "有效",
-    UPDATING: "更新中",
-    DELETING: "删除中",
-    DELETED: "已删除",
-    FAILED: "失败",
-    SUPERSEDED: "已替换",
-  };
-  return labels[status] || status || "未知";
-}
-
-function DocumentManager({ documents, docsLoading, docError, onRefresh, onReplace, onDelete, onUpload }) {
-  const [actionId, setActionId] = useState("");
-
-  return (
-    <div className="document-manager">
-      <div className="document-manager-head">
-        <div>
-          <strong>文档与版本</strong>
-          <p>替换时会先处理新版本，成功后再移除旧版本。</p>
-        </div>
-        <div className="doc-head-actions">
-          {onUpload && (
-            <button
-              type="button"
-              className="primary-button slim"
-              onClick={function() { onUpload(); }}
-            >
-              <UploadCloud size={15} />
-              上传文档
-            </button>
-          )}
-          <button
-            type="button"
-            className="ghost-button slim"
-            disabled={docsLoading}
-            onClick={function() { onRefresh(); }}
-          >
-            <RefreshCw size={15} />
-            {docsLoading ? "加载中..." : "刷新列表"}
-          </button>
-        </div>
-      </div>
-      {docError && <div className="document-error">{docError}</div>}
-      {!docsLoading && !documents.length && (
-        <div className="document-empty">尚未上传文档。</div>
-      )}
-      <div className="document-list">
-        {documents.map(function(document) {
-          var busy = ["PROCESSING", "UPDATING", "DELETING"].indexOf(document.status) !== -1;
-          var acting = actionId === document.id;
-          return (
-            <article className="document-card" key={document.id}>
-              <div className="document-card-main">
-                <div>
-                  <strong>{document.name}</strong>
-                  <span>
-                    当前版本 v{document.currentVersion || "--"} ·
-                    更新于 {formatTime(document.updatedAt)}
-                  </span>
-                </div>
-                <em className={"document-status status-" + String(document.status || "").toLowerCase()}>
-                  {documentStatusLabel(document.status)}
-              </em>
-              </div>
-              <div className="document-actions">
-                <label className={classNames(
-                  "ghost-button",
-                  "slim",
-                  (busy || document.status === "DELETED" || acting) && "disabled",
-                )}>
-                  <FileUp size={15} />
-                  {acting ? "处理中..." : "替换"}
-                  <input
-                    type="file"
-                    hidden
-                    disabled={busy || document.status === "DELETED" || acting}
-                    accept=".doc,.docx,.wps,.ppt,.pptx,.xls,.xlsx,.md,.txt,.pdf,.epub,.mobi"
-                    onChange={function(event) {
-                      var file = event.target.files && event.target.files[0];
-                      event.target.value = "";
-                      if (!file) return;
-                      setActionId(document.id);
-                      onReplace(document.id, file).finally(function() { setActionId(""); });
-                    }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="document-delete-button"
-                  disabled={busy || document.status === "DELETED" || acting}
-                  onClick={function() {
-                    setActionId(document.id);
-                    onDelete(document).finally(function() { setActionId(""); });
-                  }}
-                >
-                  <Trash2 size={15} />
-                  删除
-                </button>
-              </div>
-              <details className="version-history">
-                <summary>查看 {(document.versions || []).length} 个版本</summary>
-                <div>
-                  {(document.versions || []).map(function(version) {
-                    return (
-                      <div className="version-row" key={document.id + "-" + version.version}>
-                        <span>v{version.version} · {version.fileName}</span>
-                        <span>{formatSize(version.sizeBytes)}</span>
-                        <em>{documentStatusLabel(version.status)}</em>
-                        <span>{formatTime(version.createdAt)}</span>
-                        {version.error && <b>{version.error}</b>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            </article>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function UploadModal({ draft, onProvision, onClose, onDone }) {
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [inputKey, setInputKey] = useState(0);
-
-  async function handleUpload() {
-    if (!selectedFiles.length) return;
-    setUploading(true);
-    try {
-      await onProvision(draft, selectedFiles);
-      setSelectedFiles([]);
-      setInputKey(function(v) { return v + 1; });
-      if (onDone) onDone();
-    } catch (err) {
-      // stay open on failure so user can fix and retry
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <div className="detail-modal upload-panel" role="dialog" aria-modal="true">
-        <div className="modal-head">
-          <div className="modal-icon amber">
-            <UploadCloud size={21} />
-          </div>
-          <div>
-            <h2>{draft.configured ? "向知识库追加文档" : "上传文档并创建知识库"}</h2>
-            <p>支持 PDF、Word、PPT、Excel、WPS、Markdown 和 TXT；文件由平台安全处理，不在本项目长期保存。</p>
-          </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
-            <X size={19} />
-          </button>
-        </div>
-
-        <div className="upload-body">
-          <div className="upload-status-bar">
-            <span className={"cloud-job-status status-" + String(draft.indexStatus || "draft").toLowerCase()}>
-              {knowledgeStatusLabel(draft)}
-            </span>
-          </div>
-          <input
-            key={inputKey}
-            type="file"
-            multiple
-            accept=".doc,.docx,.wps,.ppt,.pptx,.xls,.xlsx,.md,.txt,.pdf,.epub,.mobi"
-            onChange={function(event) { setSelectedFiles(Array.from(event.target.files || [])); }}
-          />
-          <div className="selected-file-list">
-            {selectedFiles.length
-              ? selectedFiles.map(function(file) {
-                return <span key={file.name + "-" + file.size}>{file.name}</span>;
-              })
-              : <span>尚未选择文件</span>}
-          </div>
-        </div>
-
-        <div className="modal-foot">
-          <button type="button" className="ghost-button" onClick={onClose}>取消</button>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={uploading || !selectedFiles.length}
-            onClick={function() { handleUpload().catch(function() {}); }}
-          >
-            <FileUp size={16} />
-            {uploading ? "上传并处理中..." : draft.configured ? "上传并追加" : "上传并创建"}
-          </button>
         </div>
       </div>
     </div>
@@ -1410,27 +1137,6 @@ function StyleForm({ draft, patch, patchExample, setModal }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function KnowledgeForm({ draft, patch }) {
-  return (
-    <div className="form-grid">
-      <Field label="ID"><input value={draft.id || ""} onChange={function(e) { patch("id", e.target.value); }} /></Field>
-      <Field label="名称"><input value={draft.name || ""} onChange={function(e) { patch("name", e.target.value); }} /></Field>
-      <Field label="优先级"><input type="number" value={draft.priority || 0} onChange={function(e) { patch("priority", Number(e.target.value)); }} /></Field>
-      <Field label="未命中策略">
-        <select value={draft.fallbackPolicy || "clarify"} onChange={function(e) { patch("fallbackPolicy", e.target.value); }}>
-          <option value="clarify">资料不足先追问</option>
-          <option value="general">允许通用经验回答</option>
-        </select>
-      </Field>
-      <Field label="描述" wide><input value={draft.description || ""} onChange={function(e) { patch("description", e.target.value); }} /></Field>
-      <Field label="标签，一行一个" wide><textarea value={lines(draft.tags)} onChange={function(e) { patch("tags", splitLines(e.target.value)); }} /></Field>
-      <Field label="路由示例问题，一行一个" wide>
-        <textarea value={lines(draft.routeExamples)} onChange={function(e) { patch("routeExamples", splitLines(e.target.value)); }} />
-      </Field>
     </div>
   );
 }

@@ -15,6 +15,7 @@ from . import config
 from .admin.routers import config as config_router
 from .admin.routers import knowledge as knowledge_router
 from .admin.routers import runtime as runtime_router
+from .admin.routers import settings as settings_router
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 REACT_DIST_DIR = PROJECT_ROOT / "admin-ui" / "dist"
@@ -34,6 +35,7 @@ if REACT_ASSETS_DIR.exists():
 app.include_router(config_router.router)
 app.include_router(knowledge_router.router)
 app.include_router(runtime_router.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/")

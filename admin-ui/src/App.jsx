@@ -6,22 +6,28 @@ import {
   CheckCircle2,
   Clock3,
   Database,
+  Eye,
+  EyeOff,
   FileClock,
   FileText,
   HardDrive,
   Home,
+  Key,
   Layers3,
   ListChecks,
   MessageCircle,
   PlayCircle,
   Plus,
+  Radio,
   RefreshCw,
   Rocket,
   Save,
   Search,
   Server,
   Settings2,
+  Sliders,
   Square,
+  ToggleLeft,
   Trash2,
   UploadCloud,
   UsersRound,
@@ -39,6 +45,7 @@ const sectionMeta = {
   knowledge: { title: "知识库", icon: Database, accent: "amber" },
   bindings: { title: "群绑定", icon: UsersRound, accent: "green" },
   global: { title: "全局设置", icon: Settings2, accent: "slate" },
+  settings: { title: "运行时设置", icon: Sliders, accent: "violet" },
 };
 
 const emptyConfig = {
@@ -52,6 +59,23 @@ const emptyConfig = {
     cooldownSeconds: 30,
     smartDetection: true,
   },
+};
+
+const emptySettings = {
+  llmApiKey: "",
+  llmBaseUrl: "https://api.deepseek.com",
+  tavilyApiKey: "",
+  volcengineApiKey: "",
+  aliyunAccessKeyId: "",
+  aliyunAccessKeySecret: "",
+  dryRun: true,
+  allowRealSendConfirm: false,
+  devMode: false,
+  requireListenGroups: true,
+  webSearchEnabled: false,
+  webSearchProvider: "tavily",
+  listenGroups: [],
+  botMentionNames: [],
 };
 
 const emptyRuntime = {
@@ -238,6 +262,10 @@ export default function App() {
     lines: [],
     truncated: false,
   });
+  const [settings, setSettings] = useState(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [testResults, setTestResults] = useState({});
+  const [testing, setTesting] = useState("");
 
   useEffect(() => {
     loadAll();
@@ -252,14 +280,16 @@ export default function App() {
 
   async function loadAll() {
     setStatus({ tone: "muted", text: "正在读取本地配置..." });
-    const [configResponse, backupResponse, runtimeResponse] = await Promise.all([
+    const [configResponse, backupResponse, runtimeResponse, settingsResponse] = await Promise.all([
       requestJson("/api/config"),
       requestJson("/api/backups"),
       requestJson("/api/runtime/health"),
+      requestJson("/api/settings"),
     ]);
     setConfig(ensureConfig(configResponse.config));
     setBackups(backupResponse.backups || []);
     setRuntime({ ...emptyRuntime, ...runtimeResponse });
+    setSettings({ ...emptySettings, ...(settingsResponse.settings || {}) });
     setStatus({ tone: "ok", text: "已连接本地同步服务，配置可编辑。" });
   }
 
@@ -327,6 +357,37 @@ export default function App() {
       lines: response.lines || [],
       truncated: Boolean(response.truncated),
     });
+  }
+
+  async function saveSettings(updatedSettings) {
+    setSettingsSaving(true);
+    setStatus({ tone: "muted", text: "正在保存运行时设置..." });
+    try {
+      const response = await requestJson("/api/settings", {
+        method: "POST",
+        body: JSON.stringify(updatedSettings),
+      });
+      setSettings({ ...emptySettings, ...(response.settings || {}) });
+      setStatus({ tone: "ok", text: response.message || "设置已保存，重启机器人后生效。" });
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  async function testConnection(type, body = {}) {
+    setTesting(type);
+    setTestResults((prev) => ({ ...prev, [type]: null }));
+    try {
+      const response = await requestJson(`/api/settings/test/${type}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setTestResults((prev) => ({ ...prev, [type]: response }));
+    } catch (error) {
+      setTestResults((prev) => ({ ...prev, [type]: { ok: false, message: error.message } }));
+    } finally {
+      setTesting("");
+    }
   }
 
   function patchGlobal(field, value) {
@@ -687,10 +748,20 @@ export default function App() {
               )}
             </div>
 
-            {active === "global" ? (
+            {active === "settings" ? (
+              <SettingsPage
+                settings={settings || emptySettings}
+                onPatch={(key, value) => setSettings((prev) => ({ ...prev, [key]: value }))}
+                onSave={saveSettings}
+                saving={settingsSaving}
+                testResults={testResults}
+                testing={testing}
+                onTest={testConnection}
+              />
+            ) : active === "global" ? (
               <div className="panel-form">
                 <p className="panel-form-hint">
-                  直接修改下方字段，点击左侧“保存配置”写入本地 <code>config/bot.yaml</code>，重启机器人进程后生效。
+                  直接修改下方字段，点击左侧"保存配置"写入本地 <code>config/bot.yaml</code>，重启机器人进程后生效。
                 </p>
                 <GlobalForm draft={config.global} patch={patchGlobal} />
               </div>
@@ -749,6 +820,7 @@ function getSectionHint(type) {
     knowledge: "配置阿里云百炼 Workspace、Index、标签和未命中策略。",
     bindings: "把微信群、机器人、知识库和触发词组合起来。",
     global: "冷却时间、智能检测、排除群和管理员名单。",
+    settings: "API 密钥、运行开关、监听白名单和联网搜索配置。修改后需重启生效。",
   }[type];
 }
 
@@ -1188,6 +1260,136 @@ function RuntimeLogDrawer({ logs, onRefresh, onClose }) {
           </button>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function SettingsPage({ settings, onPatch, onSave, saving, testResults, testing, onTest }) {
+  return (
+    <div className="settings-stack">
+      <SettingsCard title="API 密钥" icon={Key}>
+        <SecretField label="LLM API Key" value={settings.llmApiKey} onChange={(v) => onPatch("llmApiKey", v)} />
+        <Field label="LLM Base URL">
+          <input value={settings.llmBaseUrl || ""} onChange={(e) => onPatch("llmBaseUrl", e.target.value)} />
+        </Field>
+        <SecretField label="Tavily API Key" value={settings.tavilyApiKey} onChange={(v) => onPatch("tavilyApiKey", v)} />
+        <SecretField label="Volcengine API Key" value={settings.volcengineApiKey} onChange={(v) => onPatch("volcengineApiKey", v)} />
+        <SecretField label="Aliyun AccessKey ID" value={settings.aliyunAccessKeyId} onChange={(v) => onPatch("aliyunAccessKeyId", v)} />
+        <SecretField label="Aliyun AccessKey Secret" value={settings.aliyunAccessKeySecret} onChange={(v) => onPatch("aliyunAccessKeySecret", v)} />
+      </SettingsCard>
+
+      <SettingsCard title="运行开关" icon={ToggleLeft}>
+        <SwitchField label="Dry Run (试跑)" checked={settings.dryRun} onChange={(v) => onPatch("dryRun", v)}
+          hint="首次启动建议开启，只读消息生成回复但不发送到群" />
+        <SwitchField label="允许真实发送" checked={settings.allowRealSendConfirm} onChange={(v) => onPatch("allowRealSendConfirm", v)}
+          hint="需先开启此开关，才能关闭 Dry Run 真实发送消息" />
+        <SwitchField label="Dev Mode" checked={settings.devMode} onChange={(v) => onPatch("devMode", v)}
+          hint="开启后会回复自己发的消息，仅用于自测" />
+        <SwitchField label="要求监听白名单" checked={settings.requireListenGroups} onChange={(v) => onPatch("requireListenGroups", v)} />
+        <SwitchField label="启用联网搜索" checked={settings.webSearchEnabled} onChange={(v) => onPatch("webSearchEnabled", v)} />
+      </SettingsCard>
+
+      <SettingsCard title="监听配置" icon={Radio}>
+        <Field label="监听群白名单" wide>
+          <textarea rows={4} value={lines(settings.listenGroups || [])}
+            onChange={(e) => onPatch("listenGroups", splitLines(e.target.value))} />
+        </Field>
+        <Field label="机器人昵称" wide>
+          <textarea rows={3} value={lines(settings.botMentionNames || [])}
+            onChange={(e) => onPatch("botMentionNames", splitLines(e.target.value))} />
+        </Field>
+      </SettingsCard>
+
+      <SettingsCard title="联网搜索" icon={Search}>
+        <Field label="搜索提供商">
+          <select value={settings.webSearchProvider || "tavily"} onChange={(e) => onPatch("webSearchProvider", e.target.value)}>
+            <option value="tavily">Tavily (英文为主)</option>
+            <option value="volcengine">Volcengine (中文推荐)</option>
+          </select>
+        </Field>
+      </SettingsCard>
+
+      <SettingsCard title="连接测试" icon={Activity}>
+        <TestButton label="测试 LLM 连接" type="llm" testing={testing} result={testResults.llm}
+          onTest={() => onTest("llm")} />
+        <TestButton label="测试搜索连接" type="search" testing={testing} result={testResults.search}
+          onTest={() => onTest("search")} />
+        <TestButton label="测试知识库连接" type="knowledge" testing={testing} result={testResults.knowledge}
+          onTest={() => onTest("knowledge")} />
+      </SettingsCard>
+
+      <div className="settings-save-row">
+        <button type="button" className="settings-save-button" disabled={saving} onClick={() => onSave(settings)}>
+          <Save size={16} />
+          {saving ? "保存中..." : "保存运行时设置"}
+        </button>
+        <span className="settings-save-hint">修改运行时设置后需要重启机器人进程才能生效。</span>
+      </div>
+    </div>
+  );
+}
+
+function SettingsCard({ title, icon: Icon, children }) {
+  return (
+    <div className="settings-card">
+      <div className="settings-card-head">
+        <Icon size={17} />
+        <h3>{title}</h3>
+      </div>
+      <div className="settings-card-body">{children}</div>
+    </div>
+  );
+}
+
+function SecretField({ label, value, onChange }) {
+  const [show, setShow] = useState(false);
+  const raw = String(value || "");
+  const isMasked = raw.startsWith("****");
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <div className="secret-input-wrap">
+        <input
+          type={show ? "text" : "password"}
+          value={raw}
+          placeholder={isMasked ? "已配置 (隐藏)" : "未配置"}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button type="button" className="secret-toggle" onClick={() => setShow((v) => !v)} title={show ? "隐藏" : "显示"}>
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+      {isMasked && <span className="field-hint">已保存，输入新值将覆盖</span>}
+    </label>
+  );
+}
+
+function SwitchField({ label, checked, onChange, hint }) {
+  return (
+    <label className="field switch-field">
+      <span>{label}</span>
+      <div className="switch-row">
+        <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
+        {hint && <span className="field-hint">{hint}</span>}
+      </div>
+    </label>
+  );
+}
+
+function TestButton({ label, type, testing, result, onTest }) {
+  const busy = testing === type;
+  return (
+    <div className="test-row">
+      <button type="button" className="ghost-button" disabled={busy} onClick={onTest}>
+        {busy ? <RefreshCw size={16} className="spin" /> : <Zap size={16} />}
+        {busy ? "测试中..." : label}
+      </button>
+      {result && (
+        <span className={classNames("test-badge", result.ok ? "ok" : "error")}>
+          {result.ok ? `${result.latencyMs}ms` : result.message}
+        </span>
+      )}
     </div>
   );
 }

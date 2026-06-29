@@ -1,10 +1,61 @@
 """环境配置"""
 import os
 from pathlib import Path
+from typing import Any
+
+import yaml
 from dotenv import load_dotenv
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(_PROJECT_ROOT / "backend" / ".env")
+
+# ── settings.yaml (web-managed overrides) ────────────────────────────────
+
+_settings: dict[str, Any] = {}
+_settings_path = _PROJECT_ROOT / "config" / "settings.yaml"
+if _settings_path.exists():
+    try:
+        _settings = yaml.safe_load(_settings_path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        pass
+
+
+def _s(key: str, default: str) -> str:
+    """Resolve a string setting: settings.yaml > default (typically from .env)."""
+    val = _settings.get(key)
+    if val is None:
+        return default
+    text = str(val).strip()
+    if not text or text.startswith("your-"):
+        return default
+    return text
+
+
+def _sb(key: str, default: bool = False) -> bool:
+    """Resolve a boolean setting."""
+    val = _settings.get(key)
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in {"true", "1", "yes"}
+    return bool(val)
+
+
+def _sl(key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Resolve a list setting (always returns tuple)."""
+    val = _settings.get(key)
+    if val is None:
+        return default
+    if isinstance(val, list):
+        items = [str(v).strip() for v in val if str(v).strip()]
+        return tuple(dict.fromkeys(items))
+    if isinstance(val, str):
+        text = val.replace("，", ",")
+        items = [v.strip() for v in text.split(",") if v.strip()]
+        return tuple(dict.fromkeys(items))
+    return default
 
 
 def _env_list(name: str) -> tuple[str, ...]:
@@ -19,8 +70,8 @@ def _env_list(name: str) -> tuple[str, ...]:
 
 
 # DeepSeek / LLM
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+LLM_API_KEY = _s("llmApiKey", os.getenv("LLM_API_KEY", ""))
+LLM_BASE_URL = _s("llmBaseUrl", os.getenv("LLM_BASE_URL", "https://api.deepseek.com"))
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
 
@@ -35,20 +86,20 @@ SEND_VERIFY_TIMEOUT = float(os.getenv("SEND_VERIFY_TIMEOUT", "5"))
 SEND_VERIFY_INTERVAL = float(os.getenv("SEND_VERIFY_INTERVAL", "0.5"))
 
 # 开发/试跑模式
-DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"  # 会回复自己发的消息，用于自测
-DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"    # 只读消息、生成回答，不真发送到群（首次启动安全网）
-ALLOW_REAL_SEND_CONFIRM = os.getenv(
-    "ALLOW_REAL_SEND_CONFIRM",
-    "false",
-).lower() == "true"                                          # 页面确认后才允许 DRY_RUN=false 启动
-TEST_GROUP = os.getenv("TEST_GROUP", "").strip()              # 兼容旧版单群配置
-LISTEN_GROUPS = _env_list("LISTEN_GROUPS") or ((TEST_GROUP,) if TEST_GROUP else ())
-BOT_MENTION_NAMES = _env_list("BOT_MENTION_NAMES")
-REQUIRE_LISTEN_GROUPS = os.getenv(
-    "REQUIRE_LISTEN_GROUPS",
-    os.getenv("REQUIRE_TEST_GROUP", "true"),
-).lower() == "true"
-REQUIRE_TEST_GROUP = REQUIRE_LISTEN_GROUPS                     # 兼容旧调用
+DEV_MODE = _sb("devMode", os.getenv("DEV_MODE", "false").lower() == "true")
+DRY_RUN = _sb("dryRun", os.getenv("DRY_RUN", "false").lower() == "true")
+ALLOW_REAL_SEND_CONFIRM = _sb(
+    "allowRealSendConfirm",
+    os.getenv("ALLOW_REAL_SEND_CONFIRM", "false").lower() == "true",
+)
+TEST_GROUP = os.getenv("TEST_GROUP", "").strip()
+LISTEN_GROUPS = _sl("listenGroups", ()) or _env_list("LISTEN_GROUPS") or ((TEST_GROUP,) if TEST_GROUP else ())
+BOT_MENTION_NAMES = _sl("botMentionNames", ()) or _env_list("BOT_MENTION_NAMES")
+REQUIRE_LISTEN_GROUPS = _sb(
+    "requireListenGroups",
+    os.getenv("REQUIRE_LISTEN_GROUPS", os.getenv("REQUIRE_TEST_GROUP", "true")).lower() == "true",
+)
+REQUIRE_TEST_GROUP = REQUIRE_LISTEN_GROUPS
 
 # 云知识库检索
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "5"))
@@ -76,13 +127,13 @@ KNOWLEDGE_FILE_PARSE_TIMEOUT_SECONDS = float(
 KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS = float(
     os.getenv("KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS", "5")
 )
-ALIYUN_BAILIAN_ACCESS_KEY_ID = os.getenv(
-    "ALIBABA_CLOUD_ACCESS_KEY_ID",
-    "",
+ALIYUN_BAILIAN_ACCESS_KEY_ID = _s(
+    "aliyunAccessKeyId",
+    os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
 )
-ALIYUN_BAILIAN_ACCESS_KEY_SECRET = os.getenv(
-    "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
-    "",
+ALIYUN_BAILIAN_ACCESS_KEY_SECRET = _s(
+    "aliyunAccessKeySecret",
+    os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
 )
 ALIYUN_BAILIAN_ENDPOINT = os.getenv(
     "ALIYUN_BAILIAN_ENDPOINT",
@@ -99,13 +150,19 @@ BOT_LOCK_FILE = os.getenv("BOT_LOCK_FILE", "runtime/bot.lock")
 BOT_HEALTH_PATH = os.getenv("BOT_HEALTH_PATH", "runtime/bot_health.json")
 
 # 实时联网搜索：由 LLM 路由器判定为时效/外部事实，或知识库未命中时调用。
-WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH_ENABLED", "false").lower() == "true"
-WEB_SEARCH_PROVIDER = os.getenv("WEB_SEARCH_PROVIDER", "tavily").strip().lower()
+WEB_SEARCH_ENABLED = _sb(
+    "webSearchEnabled",
+    os.getenv("WEB_SEARCH_ENABLED", "false").lower() == "true",
+)
+WEB_SEARCH_PROVIDER = _s(
+    "webSearchProvider",
+    os.getenv("WEB_SEARCH_PROVIDER", "tavily").strip().lower(),
+)
 WEB_SEARCH_TIMEOUT = float(os.getenv("WEB_SEARCH_TIMEOUT", "12"))
 WEB_SEARCH_MAX_RESULTS = int(os.getenv("WEB_SEARCH_MAX_RESULTS", "5"))
 
 # Tavily（英文搜索为主，WEB_SEARCH_PROVIDER=tavily 时使用）
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+TAVILY_API_KEY = _s("tavilyApiKey", os.getenv("TAVILY_API_KEY", ""))
 TAVILY_SEARCH_URL = os.getenv("TAVILY_SEARCH_URL", "https://api.tavily.com/search")
 WEB_SEARCH_DEPTH = os.getenv("WEB_SEARCH_DEPTH", "advanced")
 WEB_SEARCH_COUNTRY = os.getenv("WEB_SEARCH_COUNTRY", "china")
@@ -117,7 +174,7 @@ WEB_SEARCH_FALLBACK_TIME_RANGE = os.getenv(
 ).strip()
 
 # 火山引擎联网搜索（中文搜索推荐，WEB_SEARCH_PROVIDER=volcengine 时使用）
-VOLCENGINE_API_KEY = os.getenv("VOLCENGINE_API_KEY", "")
+VOLCENGINE_API_KEY = _s("volcengineApiKey", os.getenv("VOLCENGINE_API_KEY", ""))
 VOLCENGINE_SEARCH_URL = os.getenv(
     "VOLCENGINE_SEARCH_URL",
     "https://api.volcengine.com/web_search/v1/query",
@@ -133,3 +190,23 @@ ADMIN_CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+
+
+def get_effective_settings() -> dict[str, Any]:
+    """Return the resolved settings dict for the admin settings API."""
+    return {
+        "llmApiKey": LLM_API_KEY,
+        "llmBaseUrl": LLM_BASE_URL,
+        "tavilyApiKey": TAVILY_API_KEY,
+        "volcengineApiKey": VOLCENGINE_API_KEY,
+        "aliyunAccessKeyId": ALIYUN_BAILIAN_ACCESS_KEY_ID,
+        "aliyunAccessKeySecret": ALIYUN_BAILIAN_ACCESS_KEY_SECRET,
+        "dryRun": DRY_RUN,
+        "allowRealSendConfirm": ALLOW_REAL_SEND_CONFIRM,
+        "devMode": DEV_MODE,
+        "requireListenGroups": REQUIRE_LISTEN_GROUPS,
+        "webSearchEnabled": WEB_SEARCH_ENABLED,
+        "webSearchProvider": WEB_SEARCH_PROVIDER,
+        "listenGroups": list(LISTEN_GROUPS),
+        "botMentionNames": list(BOT_MENTION_NAMES),
+    }

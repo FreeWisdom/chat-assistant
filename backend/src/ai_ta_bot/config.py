@@ -37,6 +37,10 @@ SEND_VERIFY_INTERVAL = float(os.getenv("SEND_VERIFY_INTERVAL", "0.5"))
 # 开发/试跑模式
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"  # 会回复自己发的消息，用于自测
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"    # 只读消息、生成回答，不真发送到群（首次启动安全网）
+ALLOW_REAL_SEND_CONFIRM = os.getenv(
+    "ALLOW_REAL_SEND_CONFIRM",
+    "false",
+).lower() == "true"                                          # 页面确认后才允许 DRY_RUN=false 启动
 TEST_GROUP = os.getenv("TEST_GROUP", "").strip()              # 兼容旧版单群配置
 LISTEN_GROUPS = _env_list("LISTEN_GROUPS") or ((TEST_GROUP,) if TEST_GROUP else ())
 BOT_MENTION_NAMES = _env_list("BOT_MENTION_NAMES")

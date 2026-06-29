@@ -1,56 +1,61 @@
-import json
-from pathlib import Path
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 
-from fastapi import APIRouter, HTTPException
-
-from ... import config
-from ..services.process_manager import stop_bot, start_bot, PROJECT_ROOT
+from ..services import process_manager
 
 router = APIRouter(tags=["runtime"])
 
 
 @router.get("/api/runtime/health")
 def runtime_health():
-    health_path = Path(config.BOT_HEALTH_PATH)
-    if not health_path.is_absolute():
-        health_path = PROJECT_ROOT / health_path
+    return process_manager.runtime_health()
 
-    if not health_path.exists():
-        return {
-            "ok": True,
-            "running": False,
-            "health": {"status": "not_started"},
-        }
 
-    try:
-        health = json.loads(health_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"无法读取机器人健康状态: {exc}",
-        ) from exc
+@router.get("/api/runtime/logs")
+def runtime_logs(limit: int = Query(default=200, ge=1, le=1000)):
+    return process_manager.runtime_logs(limit)
 
-    return {
-        "ok": True,
-        "running": health.get("status") == "running",
-        "health": health,
-    }
+
+@router.post("/api/runtime/start")
+def start_runtime(payload: dict | None = None):
+    result = process_manager.start_bot(
+        force=bool((payload or {}).get("force", False)),
+    )
+    if not result.get("ok"):
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@router.post("/api/runtime/stop")
+def stop_runtime(payload: dict | None = None):
+    payload = payload or {}
+    result = process_manager.stop_bot(
+        force=bool(payload.get("force", False)),
+        timeout_seconds=int(payload.get("timeoutSeconds", 8) or 8),
+    )
+    if not result.get("ok"):
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@router.post("/api/runtime/restart")
+def restart_runtime(payload: dict | None = None):
+    result = process_manager.restart_bot(
+        force=bool((payload or {}).get("force", False)),
+    )
+    if not result.get("ok"):
+        return JSONResponse(status_code=400, content=result)
+    return result
 
 
 @router.post("/api/script/restart")
 def restart_script():
-    killed = stop_bot()
-
-    try:
-        proc = start_bot()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    log_file = proc.args[0] if hasattr(proc, "args") else ""
-
+    result = process_manager.restart_bot(force=True)
+    if not result.get("ok"):
+        return JSONResponse(status_code=400, content=result)
     return {
-        "ok": True,
-        "killed": killed,
-        "new_pid": proc.pid,
-        "log_file": str(Path(log_file).relative_to(PROJECT_ROOT)).replace("\\", "/") if log_file else "",
+        **result,
+        "killed": result.get("stoppedPids", []),
+        "new_pid": result.get("pid"),
+        "log_file": result.get("logFile", ""),
     }

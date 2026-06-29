@@ -7,6 +7,7 @@ import {
   Clock3,
   Database,
   FileClock,
+  FileText,
   HardDrive,
   Home,
   Layers3,
@@ -20,6 +21,7 @@ import {
   Search,
   Server,
   Settings2,
+  Square,
   Trash2,
   UploadCloud,
   UsersRound,
@@ -52,6 +54,20 @@ const emptyConfig = {
   },
 };
 
+const emptyRuntime = {
+  ok: true,
+  status: "unknown",
+  running: false,
+  pid: null,
+  dryRun: true,
+  listenGroups: [],
+  botMentionNames: [],
+  lastHeartbeatAt: "",
+  lastError: "",
+  logFile: "",
+  warnings: [],
+};
+
 function ensureConfig(config) {
   return {
     ...emptyConfig,
@@ -74,7 +90,13 @@ async function requestJson(url, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.detail || `请求失败：${response.status}`);
+    const detail = payload.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : payload.message || detail?.message || `请求失败：${response.status}`;
+    const error = new Error(message);
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -208,20 +230,36 @@ export default function App() {
   const [knowledgeViewId, setKnowledgeViewId] = useState("");
   const [status, setStatus] = useState({ tone: "muted", text: "正在连接本地同步服务..." });
   const [saving, setSaving] = useState(false);
-  const [restarting, setRestarting] = useState(false);
+  const [runtime, setRuntime] = useState(emptyRuntime);
+  const [runtimeBusy, setRuntimeBusy] = useState("");
+  const [runtimeLogs, setRuntimeLogs] = useState({
+    open: false,
+    logFile: "",
+    lines: [],
+    truncated: false,
+  });
 
   useEffect(() => {
     loadAll();
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadRuntimeHealth().catch(() => {});
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   async function loadAll() {
     setStatus({ tone: "muted", text: "正在读取本地配置..." });
-    const [configResponse, backupResponse] = await Promise.all([
+    const [configResponse, backupResponse, runtimeResponse] = await Promise.all([
       requestJson("/api/config"),
       requestJson("/api/backups"),
+      requestJson("/api/runtime/health"),
     ]);
     setConfig(ensureConfig(configResponse.config));
     setBackups(backupResponse.backups || []);
+    setRuntime({ ...emptyRuntime, ...runtimeResponse });
     setStatus({ tone: "ok", text: "已连接本地同步服务，配置可编辑。" });
   }
 
@@ -251,19 +289,44 @@ export default function App() {
     }
   }
 
-  async function restartScript() {
-    setRestarting(true);
-    setStatus({ tone: "muted", text: "正在重启机器人脚本..." });
+  async function loadRuntimeHealth() {
+    const response = await requestJson("/api/runtime/health");
+    setRuntime({ ...emptyRuntime, ...response });
+    return response;
+  }
+
+  async function controlRuntime(action) {
+    const labels = {
+      start: "启动监听脚本",
+      stop: "停止监听脚本",
+      restart: "重启监听脚本",
+    };
+    const payload = action === "stop"
+      ? { force: true, timeoutSeconds: 8 }
+      : { force: action === "restart" };
+    setRuntimeBusy(action);
+    setStatus({ tone: "muted", text: `正在${labels[action]}...` });
     try {
-      const response = await requestJson("/api/script/restart", { method: "POST" });
-      const killedInfo = response.killed?.length ? `，已停掉旧进程 ${response.killed.length} 个` : "";
-      setStatus({
-        tone: "ok",
-        text: `机器人脚本已启动${killedInfo}。日志：${response.log_file}`,
+      const response = await requestJson(`/api/runtime/${action}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
       });
+      setRuntime({ ...emptyRuntime, ...response });
+      setStatus({ tone: "ok", text: response.message || `${labels[action]}已提交。` });
+      await loadRuntimeHealth();
     } finally {
-      setRestarting(false);
+      setRuntimeBusy("");
     }
+  }
+
+  async function loadRuntimeLogs() {
+    const response = await requestJson("/api/runtime/logs?limit=240");
+    setRuntimeLogs({
+      open: true,
+      logFile: response.logFile || "",
+      lines: response.lines || [],
+      truncated: Boolean(response.truncated),
+    });
   }
 
   function patchGlobal(field, value) {
@@ -496,16 +559,57 @@ export default function App() {
             <Save size={16} />
             {saving ? "写入中..." : "保存配置"}
           </button>
-          <button
-            type="button"
-            className="side-restart-button"
-            disabled={restarting || saving}
-            title="停掉正在跑的 main.py 并启动新进程。日志写入 wxauto_logs/restart_TIMESTAMP.log"
-            onClick={() => restartScript().catch(showError)}
-          >
-            <RefreshCw size={16} />
-            {restarting ? "重启中..." : "重启脚本"}
-          </button>
+          <div className="runtime-mini-panel">
+            <div className="runtime-mini-status">
+              <span className={classNames("runtime-dot", runtime.running && "is-running", runtime.status === "error" && "is-error")} />
+              <div>
+                <strong>{runtimeStatusText(runtime)}</strong>
+                <em>{runtimeDetailText(runtime)}</em>
+              </div>
+            </div>
+            <div className="runtime-action-grid">
+              <button
+                type="button"
+                className="runtime-action-button start"
+                disabled={saving || Boolean(runtimeBusy) || runtime.running}
+                title="按当前配置启动微信监听和自动回复脚本"
+                onClick={() => controlRuntime("start").catch(showError)}
+              >
+                <PlayCircle size={15} />
+                {runtimeBusy === "start" ? "启动中" : "启动"}
+              </button>
+              <button
+                type="button"
+                className="runtime-action-button stop"
+                disabled={saving || Boolean(runtimeBusy) || !runtime.pid}
+                title="停止当前 PID 文件记录的机器人监听进程"
+                onClick={() => controlRuntime("stop").catch(showError)}
+              >
+                <Square size={14} />
+                {runtimeBusy === "stop" ? "停止中" : "停止"}
+              </button>
+              <button
+                type="button"
+                className="runtime-action-button"
+                disabled={saving || Boolean(runtimeBusy)}
+                title="停止旧监听进程并按当前配置重新启动"
+                onClick={() => controlRuntime("restart").catch(showError)}
+              >
+                <RefreshCw size={15} />
+                {runtimeBusy === "restart" ? "重启中" : "重启"}
+              </button>
+              <button
+                type="button"
+                className="runtime-action-button"
+                disabled={Boolean(runtimeBusy)}
+                title="查看最近的机器人运行日志"
+                onClick={() => loadRuntimeLogs().catch(showError)}
+              >
+                <FileText size={15} />
+                日志
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className={`sync-card tone-${status.tone}`}>
@@ -529,6 +633,7 @@ export default function App() {
             stats={stats}
             config={config}
             backups={backups}
+            runtime={runtime}
             onNavigate={navigateSection}
             onCreate={createFromHome}
           />
@@ -612,11 +717,26 @@ export default function App() {
           onSave={saveModalDraft}
         />
       )}
+      {runtimeLogs.open && (
+        <RuntimeLogDrawer
+          logs={runtimeLogs}
+          onRefresh={() => loadRuntimeLogs().catch(showError)}
+          onClose={() => setRuntimeLogs((current) => ({ ...current, open: false }))}
+        />
+      )}
     </div>
   );
 
   function showError(error) {
-    setStatus({ tone: "error", text: error.message || String(error) });
+    const payload = error.payload || {};
+    if (payload.status || payload.running !== undefined) {
+      setRuntime((current) => ({ ...current, ...payload }));
+    }
+    const checks = Array.isArray(payload.blockingChecks) ? payload.blockingChecks : [];
+    const suffix = checks.length
+      ? `：${checks.map((item) => item.message || item.code).join("；")}`
+      : "";
+    setStatus({ tone: "error", text: `${error.message || String(error)}${suffix}` });
   }
 
 }
@@ -647,6 +767,28 @@ function formatTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function runtimeStatusText(runtime) {
+  if (runtime?.running) return "运行中";
+  if (runtime?.status === "starting") return "启动中";
+  if (runtime?.status === "stopped") return "已停止";
+  if (runtime?.status === "exited") return "已退出";
+  if (runtime?.status === "error" || runtime?.status === "failed") return "异常";
+  return "未启动";
+}
+
+function runtimeDetailText(runtime) {
+  if (runtime?.lastError) return runtime.lastError;
+  if (runtime?.pid) return `PID ${runtime.pid}`;
+  if (runtime?.logFile) return runtime.logFile;
+  return "等待从页面启动监听脚本";
+}
+
+function compactList(items, emptyText = "未配置") {
+  const safe = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!safe.length) return emptyText;
+  return safe.slice(0, 3).join("、") + (safe.length > 3 ? ` 等 ${safe.length} 个` : "");
 }
 
 function formatSize(value) {
@@ -732,7 +874,7 @@ function buildHomeModel(config, backups) {
   };
 }
 
-function HomePage({ stats, config, backups, onNavigate, onCreate }) {
+function HomePage({ stats, config, backups, runtime, onNavigate, onCreate }) {
   const model = useMemo(() => buildHomeModel(config, backups), [config, backups]);
   const quickActions = [
     { title: "新建机器人", desc: "定义身份、职责、回答边界", icon: Bot, action: () => onCreate("bots") },
@@ -802,24 +944,24 @@ function HomePage({ stats, config, backups, onNavigate, onCreate }) {
           </div>
           <div className="status-grid">
             <div className="status-item primary">
-              <span>同步服务</span>
-              <strong>在线</strong>
-              <em>FastAPI · 127.0.0.1:8000</em>
+              <span>监听脚本</span>
+              <strong>{runtimeStatusText(runtime)}</strong>
+              <em>{runtimeDetailText(runtime)}</em>
             </div>
             <div className="status-item">
-              <span>配置缓存</span>
-              <strong>本地写入</strong>
-              <em>config/bot.yaml</em>
+              <span>发送模式</span>
+              <strong>{runtime?.dryRun ? "DRY_RUN" : "真实发送"}</strong>
+              <em>{runtime?.dryRun ? "只生成回复，不发送到微信群" : "会向已监听群发送回复"}</em>
             </div>
             <div className="status-item">
-              <span>知识来源</span>
-              <strong>阿里云百炼</strong>
-              <em>运行时通过 Retrieve API 检索</em>
+              <span>监听群</span>
+              <strong>{Array.isArray(runtime?.listenGroups) ? runtime.listenGroups.length : 0} 个</strong>
+              <em>{compactList(runtime?.listenGroups)}</em>
             </div>
             <div className="status-item">
-              <span>生效方式</span>
-              <strong>需重启</strong>
-              <em>页面保存不会热更新机器人进程</em>
+              <span>最近心跳</span>
+              <strong>{runtime?.lastHeartbeatAt ? formatTime(runtime.lastHeartbeatAt) : "暂无"}</strong>
+              <em>{runtime?.lastError || "未收到运行错误"}</em>
             </div>
           </div>
         </article>
@@ -1015,6 +1157,39 @@ function getChips(type, item, config) {
     ].slice(0, 5);
   }
   return [];
+}
+
+function RuntimeLogDrawer({ logs, onRefresh, onClose }) {
+  return (
+    <div className="drawer-backdrop runtime-log-backdrop" role="presentation">
+      <aside className="runtime-log-drawer" role="dialog" aria-modal="true">
+        <div className="drawer-head">
+          <div>
+            <span>Runtime Logs</span>
+            <h2>机器人监听日志</h2>
+            <p>{logs.logFile || "还没有生成运行日志。"}</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
+            <X size={19} />
+          </button>
+        </div>
+        <div className="runtime-log-body">
+          {logs.truncated && <div className="runtime-log-note">仅显示最近 240 行。</div>}
+          {logs.lines.length ? (
+            <pre>{logs.lines.join("\n")}</pre>
+          ) : (
+            <div className="panel-empty">暂无日志内容。</div>
+          )}
+        </div>
+        <div className="drawer-foot">
+          <button type="button" className="ghost-button" onClick={onRefresh}>
+            <RefreshCw size={16} />
+            刷新日志
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
 }
 
 function DetailModal({

@@ -128,7 +128,8 @@ button {
 }
 
 .side-save-button,
-.side-restart-button {
+.side-restart-button,
+.runtime-action-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,18 +156,102 @@ button {
   background: rgba(255, 255, 255, 0.09);
 }
 
+.runtime-mini-panel {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(233, 255, 244, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.runtime-mini-status {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+}
+
+.runtime-mini-status strong,
+.runtime-mini-status em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-mini-status strong {
+  color: #fff;
+  font-size: 13px;
+}
+
+.runtime-mini-status em {
+  margin-top: 3px;
+  color: rgba(233, 255, 244, 0.58);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.runtime-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(233, 255, 244, 0.46);
+}
+
+.runtime-dot.is-running {
+  background: var(--green-2);
+  box-shadow: 0 0 0 3px rgba(7, 193, 96, 0.16);
+}
+
+.runtime-dot.is-error {
+  background: #ff6b6b;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.18);
+}
+
+.runtime-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.runtime-action-button {
+  min-height: 36px;
+  padding: 0 9px;
+  border: 1px solid rgba(233, 255, 244, 0.14);
+  color: #e9fff4;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.runtime-action-button.start {
+  color: #042418;
+  border-color: transparent;
+  background: linear-gradient(135deg, #5cf5a4, #07c160);
+}
+
+.runtime-action-button.stop {
+  color: #ffe7e5;
+  border-color: rgba(255, 107, 107, 0.26);
+  background: rgba(255, 107, 107, 0.1);
+}
+
 .side-save-button:hover:not(:disabled),
-.side-restart-button:hover:not(:disabled) {
+.side-restart-button:hover:not(:disabled),
+.runtime-action-button:hover:not(:disabled) {
   filter: brightness(1.05);
 }
 
 .side-save-button:active:not(:disabled),
-.side-restart-button:active:not(:disabled) {
+.side-restart-button:active:not(:disabled),
+.runtime-action-button:active:not(:disabled) {
   transform: translateY(1px);
 }
 
 .side-save-button:disabled,
-.side-restart-button:disabled {
+.side-restart-button:disabled,
+.runtime-action-button:disabled {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(233, 255, 244, 0.4);
   box-shadow: none;
@@ -2326,6 +2411,49 @@ textarea {
   justify-content: flex-end;
   background: rgba(8, 22, 18, 0.34);
   backdrop-filter: blur(5px);
+}
+
+.runtime-log-backdrop {
+  z-index: 46;
+}
+
+.runtime-log-drawer {
+  width: min(760px, 100%);
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #f7fbf9;
+  box-shadow: -24px 0 70px rgba(5, 18, 14, 0.24);
+}
+
+.runtime-log-body {
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.runtime-log-body pre {
+  min-height: 100%;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid rgba(23, 37, 34, 0.1);
+  border-radius: 12px;
+  color: #d9fff0;
+  background: #0b211b;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow: auto;
+  white-space: pre;
+}
+
+.runtime-log-note {
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  color: #795713;
+  background: rgba(229, 174, 39, 0.12);
+  font-size: 12px;
 }
 
 .knowledge-settings-drawer {

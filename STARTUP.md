@@ -64,21 +64,18 @@ python -m ai_ta_bot
 ```
 
 注意：
-- `ALIBABA_CLOUD_ACCESS_KEY_ID` 和 `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
-  必须能访问配置中的 Workspace。只做问答时需要检索权限；通过管理页上传、
-  创建或追加知识库时，还需要百炼数据管理写权限和对应业务空间成员权限。
-- 在 `backend/.env` 配置一次 `ALIYUN_BAILIAN_WORKSPACE_ID`。该值和云端
-  Index/Job/Document ID 都是服务端内部信息，不应返回用户页面。
-- 用户只需在页面填写知识库名称并上传文档，后端自动创建或追加知识库。
-- 上传建库后在知识库详情中刷新任务状态，确认 `COMPLETED` 后再做问答验证。
+- MaxKB 路线下先启动 MaxKB，在 MaxKB 控制台配置云端模型供应商、知识库和应用。
+- 在 `backend/.env` 或管理页运行时设置中配置 `MAXKB_BASE_URL` 和 `MAXKB_API_KEY`。
+- 在知识库详情中填写 `MaxKB App ID`，并把群绑定到 `provider=maxkb` 的知识库。
+- 监听群全部绑定 MaxKB 时，本项目启动不再强制要求 `LLM_API_KEY`。
 - 新建知识库并完成群绑定后，需要重启机器人加载最新配置；向同一个
-  `indexId` 追加文档通常不需要重启机器人。
+  MaxKB 应用追加文档通常不需要重启机器人。
 - 默认要求显式配置 `LISTEN_GROUPS`，多个群用英文逗号分隔；未配置会拒绝启动。
 - `BOT_MENTION_NAMES` 需要填写本账号在群内可能显示的昵称，才能准确识别
   `@机器人` 和引用机器人消息；多个昵称用英文逗号分隔。
 - 首次验证保持 `DRY_RUN=true`，确认日志中的拟回复后再关掉。
-- `WEB_SEARCH_ENABLED=true` 时，LLM 路由判定需要实时信息或知识库未命中后，
-  才使用当前配置的火山引擎/Tavily 联网搜索。
+- 非 MaxKB provider 且 `WEB_SEARCH_ENABLED=true` 时，LLM 路由判定需要实时信息
+  或知识库未命中后，才使用当前配置的火山引擎/Tavily 联网搜索。
 
 当前两群真实测试使用带硬白名单校验的启动器：
 

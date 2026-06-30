@@ -65,22 +65,15 @@ def test_search(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return connection_test.test_web_search(provider=provider, api_key=api_key)
 
 
-@router.post("/api/settings/test/knowledge")
-def test_knowledge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+
+
+@router.post("/api/settings/test/maxkb")
+def test_maxkb(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or {}
     effective = get_effective_settings()
-    access_key_id = _value_or(
-        payload.get("accessKeyId"),
-        effective.get("aliyunAccessKeyId", ""),
-    )
-    access_key_secret = _value_or(
-        payload.get("accessKeySecret"),
-        effective.get("aliyunAccessKeySecret", ""),
-    )
-    return connection_test.test_knowledge_provider(
-        access_key_id=access_key_id,
-        access_key_secret=access_key_secret,
-    )
+    base_url = _value_or(payload.get("baseUrl"), effective.get("maxkbBaseUrl", ""))
+    api_key = _value_or(payload.get("apiKey"), effective.get("maxkbApiKey", ""))
+    return connection_test.test_maxkb(base_url=base_url, api_key=api_key)
 
 
 def _value_or(value: Any, default: str) -> str:

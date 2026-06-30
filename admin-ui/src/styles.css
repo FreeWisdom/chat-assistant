@@ -2844,6 +2844,23 @@ textarea {
   grid-column: span 2;
 }
 
+.settings-section-label {
+  grid-column: span 2;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  color: #20372f;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.settings-section-label:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+
 /* ── Secret field ─────────────────────────────────────────────────────── */
 
 .secret-input-wrap {

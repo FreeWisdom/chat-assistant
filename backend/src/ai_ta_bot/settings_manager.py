@@ -24,8 +24,6 @@ FIELD_META: dict[str, dict[str, Any]] = {
     "llmBaseUrl":            {"label": "LLM Base URL",             "type": "string", "default": "https://api.deepseek.com"},
     "tavilyApiKey":          {"label": "Tavily API Key",           "type": "secret", "default": ""},
     "volcengineApiKey":      {"label": "Volcengine API Key",       "type": "secret", "default": ""},
-    "aliyunAccessKeyId":     {"label": "Aliyun AccessKey ID",      "type": "secret", "default": ""},
-    "aliyunAccessKeySecret": {"label": "Aliyun AccessKey Secret",  "type": "secret", "default": ""},
     "dryRun":                {"label": "Dry Run (试跑)",           "type": "bool",   "default": False},
     "allowRealSendConfirm":  {"label": "允许真实发送",             "type": "bool",   "default": False},
     "devMode":               {"label": "Dev Mode",                 "type": "bool",   "default": False},
@@ -34,6 +32,8 @@ FIELD_META: dict[str, dict[str, Any]] = {
     "webSearchProvider":     {"label": "搜索提供商",              "type": "enum",   "default": "tavily", "options": ["tavily", "volcengine"]},
     "listenGroups":          {"label": "监听群白名单",            "type": "list",   "default": []},
     "botMentionNames":       {"label": "机器人昵称",              "type": "list",   "default": []},
+    "maxkbApiKey":           {"label": "MaxKB API Key",           "type": "secret", "default": ""},
+    "maxkbBaseUrl":          {"label": "MaxKB Base URL",          "type": "string", "default": "http://127.0.0.1:8080"},
 }
 
 SECRET_FIELDS = frozenset({

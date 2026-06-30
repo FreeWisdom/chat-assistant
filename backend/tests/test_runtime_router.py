@@ -38,6 +38,33 @@ def _valid_config():
     }
 
 
+def _valid_maxkb_config():
+    return {
+        "botProfiles": [{
+            "id": "bot-1",
+            "name": "测试机器人",
+            "styleId": "style-1",
+        }],
+        "styles": [{
+            "id": "style-1",
+            "name": "测试风格",
+            "maxChars": 180,
+        }],
+        "knowledgeBases": [{
+            "id": "kb-1",
+            "name": "测试 MaxKB 应用",
+            "provider": "maxkb",
+            "maxkbAppId": "app-123",
+        }],
+        "bindings": [{
+            "group": "项目研究",
+            "botId": "bot-1",
+            "knowledgeBaseIds": ["kb-1"],
+        }],
+        "global": {},
+    }
+
+
 class RuntimeRouterTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
@@ -96,6 +123,30 @@ class RuntimeRouterTests(unittest.TestCase):
             payload["blockingChecks"][0]["code"],
             "MISSING_LLM_API_KEY",
         )
+
+    def test_start_allows_maxkb_without_local_llm_key(self):
+        with (
+            patch.object(process_manager.config, "LLM_API_KEY", ""),
+            patch.object(process_manager.config, "MAXKB_API_KEY", "agent-key"),
+            patch.object(process_manager.config, "MAXKB_BASE_URL", "http://127.0.0.1:8080"),
+            patch.object(process_manager.config_store, "read_config", return_value=_valid_maxkb_config()),
+            patch.object(process_manager.config_store, "validate_config", return_value=[]),
+            patch.object(process_manager, "_get_process_commandline", return_value=""),
+            patch.object(
+                process_manager.subprocess,
+                "Popen",
+                return_value=SimpleNamespace(pid=4322),
+            ),
+        ):
+            response = self.client.post(
+                "/api/runtime/start",
+                json={"force": False},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], "starting")
 
     def test_start_writes_pid_metadata_and_returns_contract(self):
         dummy_proc = SimpleNamespace(pid=4321)

@@ -83,23 +83,8 @@ class CourseManager:
                 id=item["id"],
                 name=item["name"],
                 description=item.get("description", ""),
-                provider=item.get("provider", "aliyun_bailian"),
-                workspace_id=(
-                    (
-                        ""
-                        if str(item.get("workspaceId", "")).startswith("your-")
-                        else item.get("workspaceId", "")
-                    )
-                    or config.ALIYUN_BAILIAN_WORKSPACE_ID
-                ),
-                index_id=(
-                    ""
-                    if str(item.get("indexId", "")).startswith("your-")
-                    else item.get("indexId", "")
-                ),
-                index_job_id=item.get("indexJobId", ""),
-                index_status=item.get("indexStatus", ""),
-                document_ids=item.get("documentIds", []),
+                provider=item.get("provider", "maxkb"),
+                maxkb_app_id=item.get("maxkbAppId", ""),
                 tags=item.get("tags", []),
                 priority=int(item.get("priority", 0)),
                 fallback_policy=item.get("fallbackPolicy", "clarify"),

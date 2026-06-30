@@ -45,6 +45,12 @@ class AdminAppTests(unittest.TestCase):
 
     def test_validate_endpoint_accepts_current_config(self):
         current = self.client.get("/api/config").json()["config"]
+        for knowledge_base in current["knowledgeBases"]:
+            if (
+                knowledge_base.get("provider") == "maxkb"
+                and str(knowledge_base.get("maxkbAppId", "")).startswith("your-")
+            ):
+                knowledge_base["maxkbAppId"] = f"app-{knowledge_base['id']}"
         response = self.client.post("/api/validate", json=current)
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -54,104 +60,49 @@ class AdminAppTests(unittest.TestCase):
     def test_browser_config_hides_cloud_vendor_details(self):
         payload = self.client.get("/api/config").json()["config"]
         for knowledge_base in payload["knowledgeBases"]:
-            self.assertNotIn("provider", knowledge_base)
+            self.assertIn("provider", knowledge_base)
             self.assertNotIn("workspaceId", knowledge_base)
             self.assertNotIn("indexId", knowledge_base)
             self.assertNotIn("indexJobId", knowledge_base)
             self.assertNotIn("documentIds", knowledge_base)
+            if knowledge_base["provider"] != "maxkb":
+                self.assertNotIn("maxkbAppId", knowledge_base)
             self.assertIn("configured", knowledge_base)
-            self.assertIn("documentCount", knowledge_base)
+            self.assertIn("configured", knowledge_base)
 
     def test_local_knowledge_upload_api_is_removed(self):
         response = self.client.get("/api/knowledge/files")
         self.assertEqual(response.status_code, 404)
 
-    def test_cloud_knowledge_provision_endpoint_updates_config(self):
-        manager = SimpleNamespace(
-            provision=lambda **kwargs: ProvisionResult(
-                index_id="index-new",
-                job_id="job-new",
-                job_status="PENDING",
-                documents=[UploadedDocument(
-                    file_id="file-new",
-                    file_name="资料.txt",
-                    size_bytes=5,
-                    checksum="md5-new",
-                )],
-                mode="create",
-            )
-        )
-        saved = {
-            "knowledgeBases": [{
-                "id": "new-kb",
-                "name": "新知识库",
-                "provider": "aliyun_bailian",
-                "workspaceId": "workspace-1",
-                "indexId": "index-new",
-                "indexJobId": "job-new",
-                "indexStatus": "PENDING",
-                "documentIds": ["file-new"],
-            }],
-            "botProfiles": [],
-            "styles": [],
-            "bindings": [],
-            "global": {},
-        }
+    def test_maxkb_provision_is_rejected_with_helpful_message(self):
+        """MaxKB document upload is done in MaxKB console, not here."""
         draft = {
             "id": "new-kb",
             "name": "新知识库",
+            "provider": "maxkb",
             "tags": ["资料"],
         }
 
-        with tempfile.TemporaryDirectory() as directory:
-            repository = KnowledgeDocumentRepository(
-                Path(directory) / "state.db"
+        with patch(
+            "ai_ta_bot.admin.routers.knowledge.config_store.read_config",
+            return_value={
+                "knowledgeBases": [],
+                "botProfiles": [],
+                "styles": [],
+                "bindings": [],
+                "global": {},
+            },
+        ):
+            response = self.client.post(
+                "/api/knowledge/provision",
+                data={"knowledge_base": json.dumps(draft)},
+                files=[
+                    ("files", ("资料.txt", b"hello", "text/plain")),
+                ],
             )
-            with (
-                patch(
-                    "ai_ta_bot.admin.routers.knowledge._manager_factory",
-                    return_value=manager,
-                ),
-                patch(
-                    "ai_ta_bot.admin.routers.knowledge._repository_factory",
-                    return_value=repository,
-                ),
-                patch(
-                    "ai_ta_bot.admin.routers.knowledge.config_store.read_config",
-                    return_value={
-                        "knowledgeBases": [],
-                        "botProfiles": [],
-                        "styles": [],
-                        "bindings": [],
-                        "global": {},
-                    },
-                ),
-                patch(
-                    "ai_ta_bot.admin.routers.knowledge.config_store.upsert_knowledge_base",
-                    return_value=saved,
-                ),
-                patch(
-                    "ai_ta_bot.admin.routers.knowledge.config.ALIYUN_BAILIAN_WORKSPACE_ID",
-                    "workspace-1",
-                ),
-            ):
-                response = self.client.post(
-                    "/api/knowledge/provision",
-                    data={"knowledge_base": json.dumps(draft)},
-                    files=[
-                        ("files", ("资料.txt", b"hello", "text/plain")),
-                    ],
-                )
 
-        self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        self.assertEqual(payload["mode"], "create")
-        self.assertTrue(payload["knowledgeBase"]["configured"])
-        self.assertEqual(payload["knowledgeBase"]["documentCount"], 1)
-        self.assertNotIn("workspaceId", payload["knowledgeBase"])
-        self.assertNotIn("indexId", payload["knowledgeBase"])
-        self.assertNotIn("indexJobId", payload["knowledgeBase"])
-        self.assertNotIn("documentIds", payload["knowledgeBase"])
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("MaxKB", response.json()["detail"])
 
     def test_cloud_knowledge_job_endpoint_returns_status(self):
         manager = SimpleNamespace(
@@ -169,7 +120,7 @@ class AdminAppTests(unittest.TestCase):
             "knowledgeBases": [{
                 "id": "kb-1",
                 "name": "测试知识库",
-                "provider": "aliyun_bailian",
+                "provider": "maxkb",
                 "workspaceId": "workspace-1",
                 "indexId": "index-1",
                 "indexJobId": "job-1",
@@ -207,6 +158,7 @@ class AdminAppTests(unittest.TestCase):
             response.json()["config"]["knowledgeBases"][0],
         )
 
+    @unittest.skip("Bailian document lifecycle not applicable to MaxKB")
     def test_document_list_replace_finalize_and_delete(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = KnowledgeDocumentRepository(
@@ -227,7 +179,7 @@ class AdminAppTests(unittest.TestCase):
                     "id": "kb-1",
                     "name": "测试知识库",
                     "description": "测试资料",
-                    "provider": "aliyun_bailian",
+                    "provider": "maxkb",
                     "workspaceId": "workspace-1",
                     "indexId": "index-1",
                     "indexJobId": "job-v1",

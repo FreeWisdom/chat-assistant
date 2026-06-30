@@ -5,7 +5,7 @@ import time
 import logging
 from openai import OpenAI
 from ..configuration import RuntimeBotConfig
-from .cloud_knowledge import AliyunBailianKnowledgeClient
+from .factory import create_knowledge_client
 from .question_router import (
     LLMQuestionRouter,
     ROUTE_CLARIFY,
@@ -30,23 +30,25 @@ class RAGEngine:
         web_searcher=None,
         question_router=None,
     ):
-        if client is None and not config.LLM_API_KEY:
-            raise ValueError("LLM_API_KEY 未配置，无法启动回答生成器")
-        self.knowledge_client = (
-            knowledge_client
-            or AliyunBailianKnowledgeClient()
-        )
-        self.client = client or OpenAI(
-            api_key=config.LLM_API_KEY,
-            base_url=config.LLM_BASE_URL,
-        )
+        self.knowledge_client = knowledge_client
+        if client is not None:
+            self.client = client
+        elif config.LLM_API_KEY:
+            self.client = OpenAI(
+                api_key=config.LLM_API_KEY,
+                base_url=config.LLM_BASE_URL,
+            )
+        else:
+            self.client = None
         if web_searcher is not None:
             self.web_searcher = web_searcher
         elif config.WEB_SEARCH_ENABLED:
-            self.web_searcher = self._create_web_searcher()
+            self.web_searcher = None
         else:
             self.web_searcher = TavilyWebSearcher()
-        self.question_router = question_router or LLMQuestionRouter(self.client)
+        self.question_router = question_router or (
+            LLMQuestionRouter(self.client) if self.client is not None else None
+        )
 
     @staticmethod
     def _create_web_searcher():
@@ -63,21 +65,47 @@ class RAGEngine:
         return TavilyWebSearcher()
 
     def validate_knowledge_bases(self, runtime_configs) -> None:
-        knowledge_bases = {
-            kb.id: kb
+        knowledge_bases = [
+            kb
             for runtime in runtime_configs
             for kb in runtime.knowledge_bases
-        }
-        self.knowledge_client.validate(list(knowledge_bases.values()))
+        ]
+        if not knowledge_bases:
+            return
+        by_provider: dict[str, list] = {}
+        for kb in knowledge_bases:
+            by_provider.setdefault(kb.provider, []).append(kb)
+        for provider, kbs in by_provider.items():
+            client = create_knowledge_client(provider)
+            client.validate(kbs)
+        if self.knowledge_client is None and knowledge_bases:
+            self.knowledge_client = create_knowledge_client(knowledge_bases[0].provider)
 
     def search_knowledge(
         self,
         knowledge_bases,
         query: str,
-        top_k: int = 3,
+        top_k: int | None = None,
     ) -> list[dict]:
-        """只检索当前群绑定的云知识库。"""
-        return self.knowledge_client.search(
+        """只检索当前群绑定的知识库。按 provider 分派 client，top_k 优先级：显式传参 > per-KB retrievalTopK > provider 默认。"""
+        if not knowledge_bases:
+            return []
+        provider = knowledge_bases[0].provider
+        client = (
+            self.knowledge_client
+            if self.knowledge_client is not None
+            and getattr(self.knowledge_client, "provider", provider) == provider
+            else create_knowledge_client(provider)
+        )
+        if top_k is None:
+            first_kb = knowledge_bases[0]
+            if first_kb.retrieval_top_k is not None:
+                top_k = first_kb.retrieval_top_k
+            elif provider == "maxkb":
+                top_k = 1
+            else:
+                top_k = config.RETRIEVAL_TOP_K
+        return client.search(
             knowledge_bases,
             query,
             top_k=top_k,
@@ -85,6 +113,8 @@ class RAGEngine:
 
     def search_web(self, query: str) -> list[dict]:
         """知识库未命中时执行实时联网搜索。"""
+        if self.web_searcher is None:
+            self.web_searcher = self._create_web_searcher()
         return self.web_searcher.search(query, max_results=config.WEB_SEARCH_MAX_RESULTS)
 
     def answer(self, question: str, runtime: RuntimeBotConfig,
@@ -93,6 +123,17 @@ class RAGEngine:
                group_name: str = "") -> str:
         """Route the question, collect only needed context, then generate."""
         logger.info(f"RAG 查询 [{runtime.bot.name}/{group_name}]: {question[:80]}")
+
+        if self._uses_direct_answer_provider(runtime.knowledge_bases):
+            return self._answer_with_direct_provider(
+                question,
+                runtime,
+                chat_history=chat_history,
+            )
+
+        if self.client is None:
+            logger.error("LLM_API_KEY 未配置，且当前群未绑定 MaxKB 直接回答 provider")
+            return "本地回答模型还没配置好。请先配置 LLM_API_KEY，或把这个群绑定到 MaxKB 应用。"
 
         # 1. 先让大模型选择成本最低且足够可靠的路径。
         decision = self.question_router.classify(
@@ -108,7 +149,6 @@ class RAGEngine:
             knowledge_results = self.search_knowledge(
                 runtime.knowledge_bases,
                 question,
-                top_k=config.RETRIEVAL_TOP_K,
             )
             # 知识库应答路径没有命中时，联网搜索才作为最后兜底。
             if not knowledge_results and config.WEB_SEARCH_ENABLED:
@@ -239,6 +279,43 @@ class RAGEngine:
                 else:
                     logger.error(f"LLM 调用失败 (已重试3次): {e}")
                     return "抱歉，调用 AI 服务时出现异常，请稍后再试。"
+
+    def _uses_direct_answer_provider(self, knowledge_bases) -> bool:
+        providers = {
+            kb.provider
+            for kb in knowledge_bases
+        }
+        return providers == {"maxkb"}
+
+    def _answer_with_direct_provider(
+        self,
+        question: str,
+        runtime: RuntimeBotConfig,
+        chat_history: list[dict] | None = None,
+    ) -> str:
+        try:
+            client = (
+                self.knowledge_client
+                if self.knowledge_client is not None
+                and getattr(self.knowledge_client, "provider", "maxkb") == "maxkb"
+                else create_knowledge_client("maxkb")
+            )
+            answer_method = getattr(client, "answer", None)
+            if answer_method is None:
+                results = client.search(runtime.knowledge_bases, question, top_k=1)
+                answer = results[0].get("content", "") if results else ""
+            else:
+                answer = answer_method(
+                    runtime.knowledge_bases,
+                    question,
+                    chat_history=chat_history,
+                )
+            cleaned = self._clean_answer(str(answer or ""), runtime)
+            logger.info("MaxKB 直接回答完成")
+            return cleaned
+        except Exception as exc:
+            logger.error("MaxKB 调用失败: %s", exc)
+            return "抱歉，调用 MaxKB 服务时出现异常，请稍后再试。"
 
     @staticmethod
     def _filter_relevant_web_results(

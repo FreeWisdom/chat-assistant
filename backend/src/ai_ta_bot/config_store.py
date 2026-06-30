@@ -16,15 +16,8 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "bot.yaml"
 BACKUP_DIR = PROJECT_ROOT / "runtime" / "backups"
-SUPPORTED_PROVIDERS = {"aliyun_bailian"}
-INTERNAL_KNOWLEDGE_FIELDS = {
-    "provider",
-    "workspaceId",
-    "indexId",
-    "indexJobId",
-    "indexStatus",
-    "documentIds",
-}
+SUPPORTED_PROVIDERS = {"maxkb"}
+INTERNAL_KNOWLEDGE_FIELDS = set()
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -121,23 +114,16 @@ def normalize_config(data: dict[str, Any]) -> dict[str, Any]:
     for item in _listify(data.get("knowledgeBases")):
         kb_id = str(item.get("id", "")).strip()
         provider = (
-            str(item.get("provider", "aliyun_bailian")).strip()
-            or "aliyun_bailian"
+            str(item.get("provider", "maxkb")).strip()
+            or "maxkb"
         )
         normalized["knowledgeBases"].append({
             "id": kb_id,
             "name": str(item.get("name", "")).strip(),
             "description": str(item.get("description", "")).strip(),
             "provider": provider,
-            "workspaceId": str(item.get("workspaceId", "")).strip(),
-            "indexId": str(item.get("indexId", "")).strip(),
-            "indexJobId": str(item.get("indexJobId", "")).strip(),
-            "indexStatus": str(item.get("indexStatus", "")).strip(),
-            "documentIds": [
-                str(v).strip()
-                for v in _listify(item.get("documentIds"))
-                if str(v).strip()
-            ],
+
+            "maxkbAppId": str(item.get("maxkbAppId", "") or "").strip(),
             "tags": [str(v).strip() for v in _listify(item.get("tags")) if str(v).strip()],
             "priority": int(item.get("priority") or 0),
             "fallbackPolicy": str(item.get("fallbackPolicy", "")).strip() or "clarify",
@@ -203,26 +189,15 @@ def validate_config(data: dict[str, Any]) -> list[str]:
     from . import config as app_config
 
     for kb in data.get("knowledgeBases", []):
+        kb_id = kb.get("id") or "<unknown>"
         if not kb.get("name"):
-            errors.append(f"知识库 {kb.get('id') or '<unknown>'} 缺少名称")
-        provider = kb.get("provider") or "aliyun_bailian"
+            errors.append(f"知识库 {kb_id} 缺少名称")
+        provider = kb.get("provider") or "maxkb"
         if provider not in SUPPORTED_PROVIDERS:
-            errors.append(f"知识库 {kb.get('id') or '<unknown>'} 的 provider 不支持: {provider}")
+            errors.append(f"知识库 {kb_id} 的 provider 不支持: {provider}")
             continue
-        resolved_workspace = (
-            _configured_value(kb.get("workspaceId"))
-            or app_config.ALIYUN_BAILIAN_WORKSPACE_ID
-        )
-        if kb.get("id") in bound_kb_ids and not resolved_workspace:
-            errors.append(
-                f"已绑定群的云知识库 {kb.get('id') or '<unknown>'} 尚未完成平台配置"
-            )
-        resolved_index = _configured_value(kb.get("indexId"))
-        if kb.get("id") in bound_kb_ids and not resolved_index:
-            logger.warning(
-                "已绑定群的云知识库 %s 尚未创建完成，检索时将被跳过",
-                kb.get("id") or "<unknown>",
-            )
+        if kb.get("id") in bound_kb_ids and not _configured_value(kb.get("maxkbAppId")):
+            errors.append(f"MaxKB 知识库 {kb_id} 缺少 maxkbAppId")
 
     for index, binding in enumerate(data.get("bindings", [])):
         group = str(binding.get("group", "")).strip()
@@ -260,12 +235,8 @@ def public_config(data: dict[str, Any]) -> dict[str, Any]:
             for key, value in item.items()
             if key not in INTERNAL_KNOWLEDGE_FIELDS
         }
-        public_item["indexStatus"] = item.get("indexStatus", "")
-        public_item["configured"] = bool(_configured_value(item.get("indexId")))
-        public_item["canRefreshStatus"] = bool(
-            _configured_value(item.get("indexJobId"))
-        )
-        public_item["documentCount"] = len(item.get("documentIds", []))
+        public_item["configured"] = bool(_configured_value(item.get("maxkbAppId")))
+        public_item["providerLabel"] = "MaxKB"
         result["knowledgeBases"].append(public_item)
     return result
 
@@ -291,15 +262,16 @@ def merge_public_config(
         current = existing_by_id.get(kb_id, {})
         merged["knowledgeBases"].append({
             **item,
-            "provider": current.get("provider", "aliyun_bailian"),
-            "workspaceId": (
-                _configured_value(current.get("workspaceId"))
-                or config.ALIYUN_BAILIAN_WORKSPACE_ID
+            "provider": (
+                current.get("provider")
+                if kb_id in existing_by_id
+                else item.get("provider", "maxkb")
             ),
-            "indexId": _configured_value(current.get("indexId")),
-            "indexJobId": current.get("indexJobId", ""),
-            "indexStatus": current.get("indexStatus", ""),
-            "documentIds": current.get("documentIds", []),
+            "maxkbAppId": (
+                item.get("maxkbAppId", "")
+                if "maxkbAppId" in item
+                else current.get("maxkbAppId", "")
+            ),
         })
     return merged
 

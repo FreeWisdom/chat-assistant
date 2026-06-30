@@ -59,6 +59,12 @@ function formatSize(value) {
 }
 
 function getKnowledgeState(item) {
+  if (item?.provider === "maxkb") {
+    if (item?.configured) {
+      return { key: "ready", label: "已绑定", description: "MaxKB 应用已配置，可直接生成群聊回复。", icon: CheckCircle2 };
+    }
+    return { key: "draft", label: "未绑定", description: "请填写 MaxKB App ID。", icon: Clock3 };
+  }
   const status = String(item?.indexStatus || "").toUpperCase();
   if (status === "FAILED") {
     return {
@@ -559,7 +565,7 @@ function KnowledgeSettingsDrawer({ knowledgeBase, onClose, onSave }) {
   useEffect(() => {
     setDraft(structuredClone(knowledgeBase));
     setError("");
-  }, [knowledgeBase.id]);
+  }, [knowledgeBase.id, knowledgeBase.provider]);
 
   function patch(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -597,7 +603,7 @@ function KnowledgeSettingsDrawer({ knowledgeBase, onClose, onSave }) {
           <section className="settings-group">
             <div>
               <strong>基础信息</strong>
-              <span>用于管理端展示和业务识别。</span>
+              <span>配置 MaxKB 应用连接和展示信息。</span>
             </div>
             <label className="field">
               <span>名称</span>
@@ -616,40 +622,9 @@ function KnowledgeSettingsDrawer({ knowledgeBase, onClose, onSave }) {
               <span>描述</span>
               <textarea value={draft.description || ""} onChange={(event) => patch("description", event.target.value)} />
             </label>
-          </section>
-
-          <section className="settings-group">
-            <div>
-              <strong>回答策略</strong>
-              <span>控制资料未命中时的处理方式。</span>
-            </div>
-            <div className="settings-two-columns">
-              <label className="field">
-                <span>优先级</span>
-                <input type="number" value={draft.priority ?? 0} onChange={(event) => patch("priority", Number(event.target.value))} />
-              </label>
-              <label className="field">
-                <span>未命中策略</span>
-                <select value={draft.fallbackPolicy || "clarify"} onChange={(event) => patch("fallbackPolicy", event.target.value)}>
-                  <option value="clarify">资料不足先追问</option>
-                  <option value="general">允许通用经验回答</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <section className="settings-group">
-            <div>
-              <strong>检索路由提示</strong>
-              <span>帮助系统判断哪些问题应该检索这个知识库。</span>
-            </div>
             <label className="field">
-              <span>标签，一行一个</span>
-              <textarea value={lines(draft.tags)} onChange={(event) => patch("tags", splitLines(event.target.value))} />
-            </label>
-            <label className="field">
-              <span>示例问题，一行一个</span>
-              <textarea value={lines(draft.routeExamples)} onChange={(event) => patch("routeExamples", splitLines(event.target.value))} />
+              <span>MaxKB App ID</span>
+              <input value={draft.maxkbAppId || ""} onChange={(event) => patch("maxkbAppId", event.target.value)} placeholder="MaxKB 控制台 → 应用详情 → 复制应用 ID" />
             </label>
           </section>
         </div>
@@ -714,6 +689,10 @@ function KnowledgeDetail({
   }
 
   useEffect(() => {
+    if (knowledgeBase.provider === "maxkb") {
+      setDocuments([]);
+      return;
+    }
     if (!knowledgeBase.configured && !knowledgeBase.canRefreshStatus && !knowledgeBase.documentCount) {
       setDocuments([]);
       return;
@@ -791,21 +770,23 @@ function KnowledgeDetail({
             <Settings2 size={16} />
             知识库设置
           </button>
-          <button type="button" className="primary-button slim" onClick={() => {
-            setActiveTab("documents");
-            const currentStatus = String(knowledgeBase.indexStatus || "").toUpperCase();
-            setUploadJobStatus(currentStatus);
-            setUploadPhase(
-              currentStatus === "PENDING" || currentStatus === "RUNNING"
-                ? "tracking"
-                : "idle",
-            );
-            setUploadMessage("");
-            setUploadOpen(true);
-          }}>
-            <UploadCloud size={16} />
-            上传文档
-          </button>
+          {knowledgeBase.provider !== "maxkb" && (
+            <button type="button" className="primary-button slim" onClick={() => {
+              setActiveTab("documents");
+              const currentStatus = String(knowledgeBase.indexStatus || "").toUpperCase();
+              setUploadJobStatus(currentStatus);
+              setUploadPhase(
+                currentStatus === "PENDING" || currentStatus === "RUNNING"
+                  ? "tracking"
+                  : "idle",
+              );
+              setUploadMessage("");
+              setUploadOpen(true);
+            }}>
+              <UploadCloud size={16} />
+              上传文档
+            </button>
+          )}
         </div>
       </div>
 
@@ -847,14 +828,24 @@ function KnowledgeDetail({
 
       {activeTab === "documents" && (
         <div className="knowledge-detail-content">
-          <DocumentTable
-            documents={documents}
-            loading={loading}
-            error={error}
-            onRefresh={() => loadDocuments({ job: true })}
-            onReplace={handleReplace}
-            onDelete={handleDelete}
-          />
+          {knowledgeBase.provider === "maxkb" ? (
+            <section className="knowledge-documents-panel">
+              <div className="knowledge-document-empty">
+                <Database size={36} />
+                <strong>文档由 MaxKB 托管</strong>
+                <span>请在 MaxKB 控制台维护知识库、应用提示词和云端模型；本项目只保存 App ID 并调用应用回答。</span>
+              </div>
+            </section>
+          ) : (
+            <DocumentTable
+              documents={documents}
+              loading={loading}
+              error={error}
+              onRefresh={() => loadDocuments({ job: true })}
+              onReplace={handleReplace}
+              onDelete={handleDelete}
+            />
+          )}
         </div>
       )}
 

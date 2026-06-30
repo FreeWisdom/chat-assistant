@@ -101,48 +101,35 @@ REQUIRE_LISTEN_GROUPS = _sb(
 )
 REQUIRE_TEST_GROUP = REQUIRE_LISTEN_GROUPS
 
-# 云知识库检索
+# 知识库检索
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "5"))
-KNOWLEDGE_RETRIEVAL_MIN_SCORE = float(
-    os.getenv("KNOWLEDGE_RETRIEVAL_MIN_SCORE", "0.2")
-)
-KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS = float(
-    os.getenv("KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS", "20")
-)
-KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS = int(
-    os.getenv("KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS", "2")
-)
-KNOWLEDGE_UPLOAD_MAX_FILES = int(
-    os.getenv("KNOWLEDGE_UPLOAD_MAX_FILES", "10")
-)
-KNOWLEDGE_UPLOAD_MAX_FILE_BYTES = int(
-    os.getenv("KNOWLEDGE_UPLOAD_MAX_FILE_BYTES", str(100 * 1024 * 1024))
-)
-KNOWLEDGE_UPLOAD_HTTP_TIMEOUT_SECONDS = float(
-    os.getenv("KNOWLEDGE_UPLOAD_HTTP_TIMEOUT_SECONDS", "120")
-)
-KNOWLEDGE_FILE_PARSE_TIMEOUT_SECONDS = float(
-    os.getenv("KNOWLEDGE_FILE_PARSE_TIMEOUT_SECONDS", "600")
-)
-KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS = float(
-    os.getenv("KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS", "5")
-)
-ALIYUN_BAILIAN_ACCESS_KEY_ID = _s(
-    "aliyunAccessKeyId",
-    os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
-)
-ALIYUN_BAILIAN_ACCESS_KEY_SECRET = _s(
-    "aliyunAccessKeySecret",
-    os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
-)
-ALIYUN_BAILIAN_ENDPOINT = os.getenv(
-    "ALIYUN_BAILIAN_ENDPOINT",
-    "bailian.cn-beijing.aliyuncs.com",
-)
+# 百炼 SDK 相关（已废弃，保留兼容）
+KNOWLEDGE_UPLOAD_MAX_FILES = int(os.getenv("KNOWLEDGE_UPLOAD_MAX_FILES", "10"))
+KNOWLEDGE_UPLOAD_MAX_FILE_BYTES = int(os.getenv("KNOWLEDGE_UPLOAD_MAX_FILE_BYTES", str(100 * 1024 * 1024)))
+KNOWLEDGE_UPLOAD_HTTP_TIMEOUT_SECONDS = float(os.getenv("KNOWLEDGE_UPLOAD_HTTP_TIMEOUT_SECONDS", "120"))
+KNOWLEDGE_FILE_PARSE_TIMEOUT_SECONDS = float(os.getenv("KNOWLEDGE_FILE_PARSE_TIMEOUT_SECONDS", "600"))
+KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS = float(os.getenv("KNOWLEDGE_FILE_POLL_INTERVAL_SECONDS", "5"))
+
 ALIYUN_BAILIAN_WORKSPACE_ID = os.getenv(
     "ALIYUN_BAILIAN_WORKSPACE_ID",
     "",
 ).strip()
+# 百炼 SDK 凭证（cloud_knowledge.py 仍引用，保留兼容）
+ALIYUN_BAILIAN_ACCESS_KEY_ID = _s("aliyunAccessKeyId", os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID", ""))
+ALIYUN_BAILIAN_ACCESS_KEY_SECRET = _s("aliyunAccessKeySecret", os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""))
+ALIYUN_BAILIAN_ENDPOINT = os.getenv("ALIYUN_BAILIAN_ENDPOINT", "bailian.cn-beijing.aliyuncs.com")
+KNOWLEDGE_RETRIEVAL_MIN_SCORE = float(os.getenv("KNOWLEDGE_RETRIEVAL_MIN_SCORE", "0.2"))
+KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS = float(os.getenv("KNOWLEDGE_RETRIEVAL_TIMEOUT_SECONDS", "20"))
+KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS = int(os.getenv("KNOWLEDGE_RETRIEVAL_MAX_ATTEMPTS", "2"))
+
+# MaxKB 本地应用 + 云端模型 API
+MAXKB_BASE_URL = _s(
+    "maxkbBaseUrl",
+    os.getenv("MAXKB_BASE_URL", "http://127.0.0.1:8080"),
+)
+MAXKB_API_KEY = _s("maxkbApiKey", os.getenv("MAXKB_API_KEY", ""))
+MAXKB_CHAT_PATH = os.getenv("MAXKB_CHAT_PATH", "/chat/api").strip() or "/chat/api"
+MAXKB_TIMEOUT_SECONDS = float(os.getenv("MAXKB_TIMEOUT_SECONDS", "60"))
 
 # 运行状态
 BOT_STATE_DB = os.getenv("BOT_STATE_DB", "runtime/bot_state.db")
@@ -199,8 +186,6 @@ def get_effective_settings() -> dict[str, Any]:
         "llmBaseUrl": LLM_BASE_URL,
         "tavilyApiKey": TAVILY_API_KEY,
         "volcengineApiKey": VOLCENGINE_API_KEY,
-        "aliyunAccessKeyId": ALIYUN_BAILIAN_ACCESS_KEY_ID,
-        "aliyunAccessKeySecret": ALIYUN_BAILIAN_ACCESS_KEY_SECRET,
         "dryRun": DRY_RUN,
         "allowRealSendConfirm": ALLOW_REAL_SEND_CONFIRM,
         "devMode": DEV_MODE,
@@ -209,4 +194,6 @@ def get_effective_settings() -> dict[str, Any]:
         "webSearchProvider": WEB_SEARCH_PROVIDER,
         "listenGroups": list(LISTEN_GROUPS),
         "botMentionNames": list(BOT_MENTION_NAMES),
+        "maxkbBaseUrl": MAXKB_BASE_URL,
+        "maxkbApiKey": MAXKB_API_KEY,
     }

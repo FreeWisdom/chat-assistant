@@ -270,12 +270,6 @@ def preflight_checks() -> tuple[list[RuntimeCheck], list[RuntimeCheck]]:
             message=error,
         ))
 
-    if not _configured_value(config.LLM_API_KEY):
-        blocking.append(RuntimeCheck(
-            code="MISSING_LLM_API_KEY",
-            message="缺少 LLM_API_KEY，无法启动回答生成",
-        ))
-
     listen_groups = list(config.LISTEN_GROUPS)
     if config.REQUIRE_LISTEN_GROUPS and not listen_groups:
         blocking.append(RuntimeCheck(
@@ -292,6 +286,15 @@ def preflight_checks() -> tuple[list[RuntimeCheck], list[RuntimeCheck]]:
         str(item.get("id", "")).strip(): item
         for item in config_data.get("knowledgeBases", [])
     } if isinstance(config_data, dict) else {}
+    if (
+        not _configured_value(config.LLM_API_KEY)
+        and _requires_local_llm(config_data, listen_groups)
+    ):
+        blocking.append(RuntimeCheck(
+            code="MISSING_LLM_API_KEY",
+            message="缺少 LLM_API_KEY，无法启动本项目回答生成。若走 MaxKB，请确保监听群只绑定 provider=maxkb 的知识库",
+        ))
+
     for group in listen_groups:
         binding = binding_by_group.get(group)
         if not binding:
@@ -310,6 +313,17 @@ def preflight_checks() -> tuple[list[RuntimeCheck], list[RuntimeCheck]]:
                 code="MIXED_KNOWLEDGE_PROVIDERS",
                 message=f"群 {group} 绑定了多个 provider，MVP 阶段不支持混合检索",
             ))
+        if providers == {"maxkb"}:
+            if not _configured_value(getattr(config, "MAXKB_API_KEY", "")):
+                blocking.append(RuntimeCheck(
+                    code="MISSING_MAXKB_API_KEY",
+                    message="MaxKB provider 已绑定，但 MAXKB_API_KEY 未配置",
+                ))
+            if not _configured_value(getattr(config, "MAXKB_BASE_URL", "")):
+                blocking.append(RuntimeCheck(
+                    code="MISSING_MAXKB_BASE_URL",
+                    message="MaxKB provider 已绑定，但 MAXKB_BASE_URL 未配置",
+                ))
 
     if not config.DRY_RUN and not getattr(config, "ALLOW_REAL_SEND_CONFIRM", False):
         blocking.append(RuntimeCheck(
@@ -525,6 +539,35 @@ def _current_log_file() -> Path | None:
 def _configured_value(value: Any) -> str:
     text = str(value or "").strip()
     return "" if text.startswith("your-") else text
+
+
+def _requires_local_llm(config_data: Any, listen_groups: list[str]) -> bool:
+    if not isinstance(config_data, dict) or not listen_groups:
+        return True
+    bindings = config_data.get("bindings", [])
+    knowledge_bases = {
+        str(item.get("id", "")).strip(): item
+        for item in config_data.get("knowledgeBases", [])
+    }
+    bindings_by_group = {
+        str(item.get("group", "")).strip(): item
+        for item in bindings
+    }
+    for group in listen_groups:
+        binding = bindings_by_group.get(group)
+        if not binding:
+            return True
+        providers = {
+            str(
+                knowledge_bases.get(kb_id, {}).get("provider", "aliyun_bailian")
+                or "aliyun_bailian"
+            )
+            for kb_id in binding.get("knowledgeBaseIds", [])
+            if kb_id in knowledge_bases
+        }
+        if providers != {"maxkb"}:
+            return True
+    return False
 
 
 def _relative(path: Path) -> str:

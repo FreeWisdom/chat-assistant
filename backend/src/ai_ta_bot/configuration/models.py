@@ -27,12 +27,9 @@ class KnowledgeBase:
     id: str
     name: str
     description: str
-    provider: str = "aliyun_bailian"
-    workspace_id: str = ""
-    index_id: str = ""
-    index_job_id: str = ""
-    index_status: str = ""
-    document_ids: list[str] = field(default_factory=list)
+    provider: str = "maxkb"
+    # MaxKB fields
+    maxkb_app_id: str = ""
     tags: list[str] = field(default_factory=list)
     priority: int = 0
     fallback_policy: str = "clarify"

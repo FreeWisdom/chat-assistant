@@ -72,6 +72,16 @@ class FakeRouter:
 
 
 def make_runtime():
+    kb = SimpleNamespace(
+        id="kb-1",
+        name="测试知识库",
+        description="测试资料",
+        provider="aliyun_bailian",
+        tags=["测试"],
+        route_examples=["本地问题"],
+        retrieval_top_k=None,
+        fallback_policy="clarify",
+    )
     bot = SimpleNamespace(
         name="测试机器人",
         role="回答问题",
@@ -89,8 +99,8 @@ def make_runtime():
         group="测试群",
         bot=bot,
         style=style,
-        knowledge_bases=[],
-        knowledge_base_ids=[],
+        knowledge_bases=[kb],
+        knowledge_base_ids=[kb.id],
     )
 
 

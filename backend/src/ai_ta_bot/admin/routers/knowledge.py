@@ -8,17 +8,15 @@ import logging
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ... import config, config_store
-from ...knowledge.cloud_knowledge_admin import (
-    AliyunBailianKnowledgeManager,
-)
+from ...knowledge.factory import create_knowledge_manager
 from ...persistence import KnowledgeDocumentRepository
 
 router = APIRouter(tags=["knowledge"])
 logger = logging.getLogger(__name__)
 
 
-def _manager_factory() -> AliyunBailianKnowledgeManager:
-    return AliyunBailianKnowledgeManager()
+def _manager_factory(provider: str = "maxkb"):
+    return create_knowledge_manager(provider)
 
 
 def _repository_factory() -> KnowledgeDocumentRepository:
@@ -66,16 +64,6 @@ def _knowledge_base(kb_id: str) -> tuple[dict, dict]:
     return config_data, knowledge_base
 
 
-def _cloud_context(knowledge_base: dict) -> tuple[str, str]:
-    workspace_id = (
-        _configured_value(knowledge_base.get("workspaceId"))
-        or _configured_value(config.ALIYUN_BAILIAN_WORKSPACE_ID)
-    )
-    index_id = _configured_value(knowledge_base.get("indexId"))
-    if not workspace_id:
-        raise ValueError("知识库服务尚未完成平台配置")
-    return workspace_id, index_id
-
 
 def _public_error(exc: Exception) -> str:
     text = str(exc)
@@ -121,11 +109,19 @@ def provision_knowledge_base(
             ),
             {},
         )
-        workspace_id, index_id = _cloud_context(existing)
+        provider = existing.get("provider") or draft.get("provider") or "maxkb"
+        if provider == "maxkb":
+            raise HTTPException(
+                status_code=400,
+                detail="MaxKB 文档上传请在 MaxKB 控制台完成。"
+                       "在 MaxKB 中创建应用、绑定知识库和云端模型后，"
+                       "将应用 ID 填入本管理台的知识库配置即可。",
+            )
 
-        manager = _manager_factory()
+
+        manager = _manager_factory(provider)
         result = manager.provision(
-            workspace_id=workspace_id,
+            workspace_id="",
             name=name,
             description=str(draft.get("description", "")).strip(),
             uploads=files,
@@ -134,7 +130,7 @@ def provision_knowledge_base(
                 for item in draft.get("tags", [])
                 if str(item).strip()
             ],
-            index_id=index_id,
+            index_id="",
         )
 
         document_ids = list(dict.fromkeys([
@@ -145,8 +141,8 @@ def provision_knowledge_base(
             **existing,
             **draft,
             "id": kb_id,
-            "provider": "aliyun_bailian",
-            "workspaceId": workspace_id,
+            "provider": provider,
+            "workspaceId": "",
             "indexId": result.index_id,
             "indexJobId": result.job_id,
             "indexStatus": result.job_status,
@@ -202,13 +198,13 @@ def list_knowledge_documents(kb_id: str):
     _, knowledge_base = _knowledge_base(kb_id)
     repository = _repository_factory()
 
-    workspace_id, index_id = _cloud_context(knowledge_base)
-    if index_id:
+    # MaxKB provider: documents managed in MaxKB console
+    if False:
         try:
             manager = _manager_factory()
             cloud_docs = manager.list_cloud_documents(
-                workspace_id=workspace_id,
-                index_id=index_id,
+                workspace_id="",
+                index_id="",
             )
             repository.sync_from_cloud(kb_id, cloud_docs)
         except Exception as exc:
@@ -232,9 +228,8 @@ def replace_knowledge_document(
 ):
     try:
         _, knowledge_base = _knowledge_base(kb_id)
-        workspace_id, index_id = _cloud_context(knowledge_base)
-        if not index_id:
-            raise ValueError("知识库尚未创建完成")
+        # MaxKB provider: document management in MaxKB console
+        raise ValueError("文档管理请在 MaxKB 控制台完成")
 
         repository = _repository_factory()
         current = repository.get(document_id, include_internal=True)
@@ -252,7 +247,7 @@ def replace_knowledge_document(
             raise ValueError("文档尚无可替换的有效版本")
 
         result = _manager_factory().provision(
-            workspace_id=workspace_id,
+            workspace_id="",
             name=str(knowledge_base.get("name", "")).strip(),
             description=str(
                 knowledge_base.get("description", "")
@@ -303,9 +298,8 @@ def replace_knowledge_document(
 def delete_knowledge_document(kb_id: str, document_id: str):
     try:
         _, knowledge_base = _knowledge_base(kb_id)
-        workspace_id, index_id = _cloud_context(knowledge_base)
-        if not index_id:
-            raise ValueError("知识库尚未创建完成")
+        # MaxKB provider: document management in MaxKB console
+        raise ValueError("文档管理请在 MaxKB 控制台完成")
 
         repository = _repository_factory()
         current = repository.get(document_id, include_internal=True)
@@ -338,8 +332,8 @@ def delete_knowledge_document(kb_id: str, document_id: str):
             raise ValueError("文档尚无可删除的有效版本")
 
         source_cleaned = _manager_factory().delete_document(
-            workspace_id=workspace_id,
-            index_id=index_id,
+            workspace_id="",
+            index_id="",
             file_id=version["cloudFileId"],
         )
         deleted = repository.mark_deleted(document_id)
@@ -371,9 +365,8 @@ def delete_knowledge_document(kb_id: str, document_id: str):
 @router.get("/api/knowledge/{kb_id}/job")
 def get_knowledge_job(kb_id: str):
     _, knowledge_base = _knowledge_base(kb_id)
-    workspace_id, index_id = _cloud_context(knowledge_base)
     job_id = _configured_value(knowledge_base.get("indexJobId"))
-    if not workspace_id or not index_id or not job_id:
+    if not job_id:
         raise HTTPException(
             status_code=400,
             detail="知识库尚无可查询的索引任务",
@@ -383,8 +376,8 @@ def get_knowledge_job(kb_id: str):
         manager = _manager_factory()
         repository = _repository_factory()
         result = manager.get_job_status(
-            workspace_id=workspace_id,
-            index_id=index_id,
+            workspace_id="",
+            index_id="",
             job_id=job_id,
         )
         if result.status == "FAILED":

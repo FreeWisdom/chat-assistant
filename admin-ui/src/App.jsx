@@ -64,16 +64,13 @@ const emptyConfig = {
 const emptySettings = {
   llmApiKey: "",
   llmBaseUrl: "https://api.deepseek.com",
+  maxkbApiKey: "",
+  maxkbBaseUrl: "http://127.0.0.1:8080",
   tavilyApiKey: "",
   volcengineApiKey: "",
-  aliyunAccessKeyId: "",
-  aliyunAccessKeySecret: "",
   dryRun: true,
-  allowRealSendConfirm: false,
-  devMode: false,
-  requireListenGroups: true,
   webSearchEnabled: false,
-  webSearchProvider: "tavily",
+  webSearchProvider: "volcengine",
   listenGroups: [],
   botMentionNames: [],
 };
@@ -168,9 +165,11 @@ function defaultKnowledgeBase() {
   const id = `kb-${Date.now()}`;
   return {
     id,
-    name: "新云知识库",
+    name: "新 MaxKB 应用",
     description: "用于回答微信群内的相关问题",
-    provider: "aliyun_bailian",
+    provider: "maxkb",
+    maxkbAppId: "",
+    minScore: null,
     tags: [],
     priority: 0,
     fallbackPolicy: "clarify",
@@ -228,7 +227,8 @@ function validateModalDraft(type, draft, config, currentIndex) {
     else if (duplicateValue(config.knowledgeBases, "id", draft.id, currentIndex)) errors.push("知识库 ID 不能重复");
     if (!draft.name?.trim()) errors.push("知识库名称必填");
     const provider = draft.provider || "aliyun_bailian";
-    if (provider !== "aliyun_bailian") errors.push(`暂不支持的知识库类型：${provider}`);
+    if (provider !== "maxkb") errors.push(`暂不支持的知识库类型：${provider}`);
+    if (provider === "maxkb" && !draft.maxkbAppId?.trim()) errors.push("MaxKB 知识库必须填写 maxkbAppId");
   }
 
   if (type === "bindings") {
@@ -817,7 +817,7 @@ function getSectionHint(type) {
     home: "配置总览和本地同步状态。",
     bots: "定义机器人身份、职责和要绑定的回复风格。",
     styles: "控制聊天口吻、禁用表达、示例问答和回复长度。",
-    knowledge: "配置阿里云百炼 Workspace、Index、标签和未命中策略。",
+    knowledge: "配置 MaxKB 应用、标签和未命中策略。",
     bindings: "把微信群、机器人、知识库和触发词组合起来。",
     global: "冷却时间、智能检测、排除群和管理员名单。",
     settings: "API 密钥、运行开关、监听白名单和联网搜索配置。修改后需重启生效。",
@@ -1267,55 +1267,62 @@ function RuntimeLogDrawer({ logs, onRefresh, onClose }) {
 function SettingsPage({ settings, onPatch, onSave, saving, testResults, testing, onTest }) {
   return (
     <div className="settings-stack">
-      <SettingsCard title="API 密钥" icon={Key}>
+      <p className="panel-form-hint" style={{marginTop:0}}>
+        MaxKB API Key 在 MaxKB 控制台 → 应用详情中获取。<br />
+        配置保存后需<b>重启机器人</b>才能生效。
+      </p>
+
+      <SettingsCard title="核心服务" icon={Key}>
+        <div className="settings-section-label">MaxKB — 知识库检索</div>
+        <SecretField label="MaxKB API Key" value={settings.maxkbApiKey} onChange={(v) => onPatch("maxkbApiKey", v)} />
+        <Field label="MaxKB Base URL">
+          <input value={settings.maxkbBaseUrl || ""} placeholder="http://127.0.0.1:8080" onChange={(e) => onPatch("maxkbBaseUrl", e.target.value)} />
+        </Field>
+        <div className="settings-section-label wide">DeepSeek — AI 回复生成</div>
         <SecretField label="LLM API Key" value={settings.llmApiKey} onChange={(v) => onPatch("llmApiKey", v)} />
         <Field label="LLM Base URL">
-          <input value={settings.llmBaseUrl || ""} onChange={(e) => onPatch("llmBaseUrl", e.target.value)} />
+          <input value={settings.llmBaseUrl || ""} placeholder="https://api.deepseek.com" onChange={(e) => onPatch("llmBaseUrl", e.target.value)} />
         </Field>
-        <SecretField label="Tavily API Key" value={settings.tavilyApiKey} onChange={(v) => onPatch("tavilyApiKey", v)} />
-        <SecretField label="Volcengine API Key" value={settings.volcengineApiKey} onChange={(v) => onPatch("volcengineApiKey", v)} />
-        <SecretField label="Aliyun AccessKey ID" value={settings.aliyunAccessKeyId} onChange={(v) => onPatch("aliyunAccessKeyId", v)} />
-        <SecretField label="Aliyun AccessKey Secret" value={settings.aliyunAccessKeySecret} onChange={(v) => onPatch("aliyunAccessKeySecret", v)} />
       </SettingsCard>
 
-      <SettingsCard title="运行开关" icon={ToggleLeft}>
-        <SwitchField label="Dry Run (试跑)" checked={settings.dryRun} onChange={(v) => onPatch("dryRun", v)}
-          hint="首次启动建议开启，只读消息生成回复但不发送到群" />
-        <SwitchField label="允许真实发送" checked={settings.allowRealSendConfirm} onChange={(v) => onPatch("allowRealSendConfirm", v)}
-          hint="需先开启此开关，才能关闭 Dry Run 真实发送消息" />
-        <SwitchField label="Dev Mode" checked={settings.devMode} onChange={(v) => onPatch("devMode", v)}
-          hint="开启后会回复自己发的消息，仅用于自测" />
-        <SwitchField label="要求监听白名单" checked={settings.requireListenGroups} onChange={(v) => onPatch("requireListenGroups", v)} />
-        <SwitchField label="启用联网搜索" checked={settings.webSearchEnabled} onChange={(v) => onPatch("webSearchEnabled", v)} />
+      <SettingsCard title="安全控制" icon={ToggleLeft}>
+        <SwitchField label="Dry Run (试跑模式)" checked={settings.dryRun} onChange={(v) => onPatch("dryRun", v)}
+          hint="开启后只生成回复不发送到群，首次使用务必开启" />
       </SettingsCard>
 
       <SettingsCard title="监听配置" icon={Radio}>
-        <Field label="监听群白名单" wide>
+        <Field label="监听群白名单，一行一个" wide>
           <textarea rows={4} value={lines(settings.listenGroups || [])}
+            placeholder={"项目研究\n每日饮食打卡"}
             onChange={(e) => onPatch("listenGroups", splitLines(e.target.value))} />
         </Field>
-        <Field label="机器人昵称" wide>
+        <Field label="机器人昵称，一行一个" wide>
           <textarea rows={3} value={lines(settings.botMentionNames || [])}
+            placeholder="你的微信昵称"
             onChange={(e) => onPatch("botMentionNames", splitLines(e.target.value))} />
         </Field>
       </SettingsCard>
 
-      <SettingsCard title="联网搜索" icon={Search}>
+      <SettingsCard title="联网搜索（可选）" icon={Search}>
+        <SwitchField label="启用联网搜索" checked={settings.webSearchEnabled} onChange={(v) => onPatch("webSearchEnabled", v)}
+          hint="知识库没命中时，用搜索引擎兜底" />
         <Field label="搜索提供商">
           <select value={settings.webSearchProvider || "tavily"} onChange={(e) => onPatch("webSearchProvider", e.target.value)}>
             <option value="tavily">Tavily (英文为主)</option>
             <option value="volcengine">Volcengine (中文推荐)</option>
           </select>
         </Field>
+        <SecretField label="Tavily API Key" value={settings.tavilyApiKey} onChange={(v) => onPatch("tavilyApiKey", v)} />
+        <SecretField label="Volcengine API Key" value={settings.volcengineApiKey} onChange={(v) => onPatch("volcengineApiKey", v)} />
       </SettingsCard>
 
       <SettingsCard title="连接测试" icon={Activity}>
+        <TestButton label="测试 MaxKB 连接" type="maxkb" testing={testing} result={testResults.maxkb}
+          onTest={() => onTest("maxkb")} />
         <TestButton label="测试 LLM 连接" type="llm" testing={testing} result={testResults.llm}
           onTest={() => onTest("llm")} />
         <TestButton label="测试搜索连接" type="search" testing={testing} result={testResults.search}
           onTest={() => onTest("search")} />
-        <TestButton label="测试知识库连接" type="knowledge" testing={testing} result={testResults.knowledge}
-          onTest={() => onTest("knowledge")} />
       </SettingsCard>
 
       <div className="settings-save-row">

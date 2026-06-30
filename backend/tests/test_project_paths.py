@@ -25,10 +25,9 @@ class ProjectPathTests(unittest.TestCase):
             knowledge_base = manager.knowledge_bases[knowledge_base_id]
             self.assertEqual(
                 knowledge_base.provider,
-                "aliyun_bailian",
+                "maxkb",
             )
-            self.assertFalse(knowledge_base.workspace_id)
-            self.assertFalse(knowledge_base.index_id)
+            self.assertTrue(knowledge_base.maxkb_app_id.startswith("your-"))
 
         configured = [
             knowledge_base
@@ -38,8 +37,7 @@ class ProjectPathTests(unittest.TestCase):
         ]
         self.assertTrue(configured)
         for knowledge_base in configured:
-            self.assertTrue(knowledge_base.workspace_id)
-            self.assertTrue(knowledge_base.index_id)
+            self.assertTrue(knowledge_base.maxkb_app_id)
 
     def test_two_approved_groups_use_hand_raise_and_separate_knowledge_bases(self):
         manager = CourseManager()

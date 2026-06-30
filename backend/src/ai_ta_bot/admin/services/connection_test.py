@@ -77,52 +77,6 @@ def test_web_search(
         return {"ok": False, "provider": provider, "latencyMs": 0, "message": str(exc)}
 
 
-def test_knowledge_provider(
-    access_key_id: str,
-    access_key_secret: str,
-    timeout: int = 10,
-) -> dict[str, Any]:
-    """Verify Aliyun Bailian credentials by describing workspaces."""
-    if not access_key_id or access_key_id.startswith("your-"):
-        return {"ok": False, "latencyMs": 0, "message": "AccessKey ID 未配置或仍为示例值"}
-    if not access_key_secret or access_key_secret.startswith("your-"):
-        return {"ok": False, "latencyMs": 0, "message": "AccessKey Secret 未配置或仍为示例值"}
-
-    try:
-        from alibabacloud_bailian20231229.client import Client as BailianClient
-        from alibabacloud_tea_openapi.models import Config as AliConfig
-    except ImportError:
-        return {"ok": False, "latencyMs": 0, "message": "阿里云百炼 SDK 未安装 (alibabacloud_bailian20231229)"}
-
-    start = time.monotonic()
-    try:
-        cfg = AliConfig(
-            access_key_id=access_key_id,
-            access_key_secret=access_key_secret,
-            endpoint="bailian.cn-beijing.aliyuncs.com",
-        )
-        client = BailianClient(cfg)
-        # Lightweight call: list the first page of workspaces (pageSize=1)
-        from alibabacloud_bailian20231229.models import ListWorkspacesRequest
-        req = ListWorkspacesRequest(page_size=1, page_number=1)
-        client.list_workspaces(req)
-        latency = int((time.monotonic() - start) * 1000)
-        return {"ok": True, "latencyMs": latency, "message": "连接成功"}
-    except Exception as exc:
-        latency = int((time.monotonic() - start) * 1000)
-        msg = str(exc)
-        # Extract the most useful part of SDK errors
-        if "Code:" in msg and "Message:" in msg:
-            for part in msg.split(","):
-                part = part.strip()
-                if part.startswith("Message:"):
-                    msg = part[len("Message:"):].strip()
-                    break
-        return {"ok": False, "latencyMs": latency, "message": msg}
-
-
-# ── internal helpers ─────────────────────────────────────────────────────────
-
 def _test_tavily(api_key: str, timeout: int, start: float) -> dict[str, Any]:
     resp = requests.post(
         "https://api.tavily.com/search",
@@ -156,3 +110,54 @@ def _test_volcengine(api_key: str, timeout: int, start: float) -> dict[str, Any]
             return {"ok": True, "provider": "volcengine", "latencyMs": latency, "message": "连接成功"}
         return {"ok": False, "provider": "volcengine", "latencyMs": latency, "message": data.get("message", "未知错误")}
     return {"ok": False, "provider": "volcengine", "latencyMs": latency, "message": f"HTTP {resp.status_code}"}
+
+
+
+
+def test_maxkb(
+    base_url: str = "http://127.0.0.1:8080",
+    api_key: str = "",
+    timeout: int = 10,
+) -> dict[str, Any]:
+    """Verify MaxKB application API key via the chat profile endpoint."""
+    if not api_key or api_key.startswith("your-"):
+        return {"ok": False, "provider": "maxkb", "latencyMs": 0, "message": "API Key 未配置或仍为示例值"}
+    if not base_url:
+        return {"ok": False, "provider": "maxkb", "latencyMs": 0, "message": "Base URL 未配置"}
+
+    root = _maxkb_chat_api_root(base_url)
+    url = f"{root}/application/profile"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    start = time.monotonic()
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        latency = int((time.monotonic() - start) * 1000)
+        if resp.status_code == 200:
+            return {"ok": True, "provider": "maxkb", "latencyMs": latency, "message": "连接成功"}
+        message = f"HTTP {resp.status_code}"
+        try:
+            detail = resp.json()
+        except json.JSONDecodeError:
+            detail = {}
+        if isinstance(detail, dict):
+            message = str(detail.get("message") or detail.get("detail") or message)
+        return {"ok": False, "provider": "maxkb", "latencyMs": latency, "message": message}
+    except requests.Timeout:
+        latency = int((time.monotonic() - start) * 1000)
+        return {"ok": False, "provider": "maxkb", "latencyMs": latency, "message": "连接超时"}
+    except requests.ConnectionError as exc:
+        return {"ok": False, "provider": "maxkb", "latencyMs": 0, "message": f"无法连接: {exc}"}
+    except Exception as exc:
+        return {"ok": False, "provider": "maxkb", "latencyMs": 0, "message": str(exc)}
+
+
+def _maxkb_chat_api_root(base_url: str) -> str:
+    from ... import config
+
+    root = str(base_url or "").rstrip("/")
+    chat_path = str(getattr(config, "MAXKB_CHAT_PATH", "/chat/api") or "/chat/api").strip()
+    if not chat_path.startswith("/"):
+        chat_path = f"/{chat_path}"
+    if root.endswith(chat_path):
+        return root
+    return f"{root}{chat_path}"

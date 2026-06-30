@@ -76,9 +76,10 @@ knowledgeBases:
 - id: fuye-projects
   name: 副业项目云知识库
   description: 副业项目、创业思路、赚钱方法、案例分析和常见问题
-  provider: aliyun_bailian
+  provider: maxkb
+  maxkbAppId: your-fuye-maxkb-app-id
   workspaceId: ''
-  indexId: your-fuye-index-id
+  indexId: ''
   indexJobId: ''
   indexStatus: ''
   documentIds: []
@@ -98,9 +99,10 @@ knowledgeBases:
 - id: food-checkin
   name: 饮食打卡云知识库
   description: 日常饮食、营养搭配、热量估算和减脂资料
-  provider: aliyun_bailian
+  provider: maxkb
+  maxkbAppId: your-food-maxkb-app-id
   workspaceId: ''
-  indexId: your-food-index-id
+  indexId: ''
   indexJobId: ''
   indexStatus: ''
   documentIds: []
@@ -120,7 +122,8 @@ knowledgeBases:
 - id: kb-1782290721222
   name: 新云知识库1
   description: 用于回答微信群内的相关问题
-  provider: aliyun_bailian
+  provider: maxkb
+  maxkbAppId: app-demo-kb-1
   workspaceId: llm-6v6it30v87ozbnwf
   indexId: 06c74lojhj
   indexJobId: f105636d20e746c782b83d319e1bf007
